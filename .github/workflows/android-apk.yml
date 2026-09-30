@@ -1,0 +1,92 @@
+name: Android APK
+
+# Builds an installable release APK two ways:
+#   1. Manually — Actions tab → "Android APK" → Run workflow
+#   2. Automatically — push a tag like v1.0.1; the APK is also attached to a
+#      GitHub Release, which is the easiest thing to download on a phone.
+#
+# The APK is signed with an ephemeral CI keystore. That makes every build
+# independently installable, but it also means each build has a different
+# signature: to upgrade, uninstall the previous build first (Android refuses
+# an update across different signatures). For stable signing, put your own
+# keystore in GitHub secrets — see docs/INSTALL.md.
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build release APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      # Android SDK + cmdline-tools ship preinstalled on ubuntu-latest.
+      - name: Accept Android SDK licenses
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+
+      - name: Generate native Android project
+        run: npx expo prebuild --platform android --no-install
+
+      - name: Build release APK
+        run: |
+          chmod +x android/gradlew
+          cd android
+          ./gradlew assembleRelease --no-daemon
+
+      - name: Align and sign APK
+        run: |
+          BT="$(ls -d "$ANDROID_HOME/build-tools"/* | sort -V | tail -1)"
+          keytool -genkeypair -v \
+            -keystore taskflow-release.keystore -alias taskflow \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -storepass taskflow-ci -keypass taskflow-ci \
+            -dname "CN=TaskFlow, OU=CI, O=TaskFlow"
+
+          UNSIGNED="android/app/build/outputs/apk/release/app-release.apk"
+          "$BT/zipalign" -f -p 4 "$UNSIGNED" aligned.apk
+          "$BT/apksigner" sign \
+            --ks taskflow-release.keystore \
+            --ks-pass pass:taskflow-ci --key-pass pass:taskflow-ci \
+            --out "TaskFlow-${{ github.ref_name }}.apk" aligned.apk
+          "$BT/apksigner" verify "TaskFlow-${{ github.ref_name }}.apk"
+          ls -lh "TaskFlow-${{ github.ref_name }}.apk"
+
+      - name: Upload artifact (every run)
+        uses: actions/upload-artifact@v4
+        with:
+          name: TaskFlow-apk-${{ github.run_number }}
+          path: TaskFlow-*.apk
+          if-no-files-found: error
+
+      - name: Attach to GitHub Release (tag builds only)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: TaskFlow ${{ github.ref_name }}
+          files: TaskFlow-*.apk
+          generate_release_notes: true

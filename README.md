@@ -134,6 +134,43 @@ stripping — no build step, no test framework.
 
 ---
 
+## 📱 Get the app (APK)
+
+Install TaskFlow on any Android phone — no Play Store, no account.
+
+> **Full walkthrough with screenshots-level detail: [docs/INSTALL.md](docs/INSTALL.md)**
+
+### Download the APK
+
+| Source | How | Best for |
+| --- | --- | --- |
+| **Actions artifact** | [Actions → Android APK → Run workflow](https://github.com/Parth-191006/To-do/actions/workflows/android-apk.yml) → wait ~15–20 min → download **TaskFlow-apk-\<n\>** from the run's Artifacts | Latest code, any time |
+| **Releases page** | **Releases** → latest version → download the `.apk` asset | Stable, shareable, permanent links |
+| **Build it yourself** | `git clone` → `npm ci` → `npx expo prebuild -p android` → `cd android && ./gradlew assembleRelease` | No CI, full control |
+
+### Install in 30 seconds
+
+1. Copy the `.apk` to your phone (download directly, or email/Drive/USB).
+2. Tap it in **Files → Downloads**.
+3. Allow **Install unknown apps** for that source when prompted (normal
+   sideloading dialog — the APK isn't from the Play Store).
+4. Open **TaskFlow**, grant the notification permission. Done.
+
+> Updating across CI builds: each workflow run signs with a fresh key, so
+> **uninstall the old build before installing a new one**. To get a stable
+> signature (in-place updates), add your keystore to repo secrets —
+> [docs/INSTALL.md](docs/INSTALL.md) has the exact steps.
+
+### iOS
+
+No public APK-equivalent for iOS (Apple requires signed IPAs via TestFlight or
+a device registration). Easiest options: run from source with
+`npx expo run:ios`, use **Expo Go** for a quick preview, or use
+[`eas build`](https://docs.expo.dev/build/introduction/) with the included
+[`eas.json`](eas.json) for a TestFlight-ready archive.
+
+---
+
 ## Platform notes
 
 - **Android** creates four notification channels (`default`, `urgent`, `focus`,
