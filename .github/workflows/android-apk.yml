@@ -20,6 +20,12 @@ name: Android APK
 # `keystore` job below therefore mints the key on a main run (seconds, no build)
 # and every later tag restores it from the default branch.
 #
+# Note on the cache key: entries are stored per (key, ref), and a restore looks
+# at the current ref BEFORE falling back to the default branch. So a keystore ever
+# saved from a tag silently shadows the one on main. If a build reports a
+# different fingerprint than the one on main, bump the `-vN` suffix below so the
+# stale tag-scoped entry stops matching.
+#
 # To pin the key yourself instead, add these repository secrets and the workflow
 # will prefer them — see docs/INSTALL.md:
 #   KEYSTORE_BASE64, KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD
@@ -53,7 +59,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: taskflow-release.keystore
-          key: taskflow-release-keystore-v1
+          key: taskflow-release-keystore-v2
 
       # GitHub does not expose the `secrets` context to step `if` blocks, so the
       # choice between secret / cached / freshly minted is made in bash.
@@ -92,14 +98,30 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: taskflow-release.keystore
-          key: taskflow-release-keystore-v1
+          key: taskflow-release-keystore-v2
 
+      # Printed on the run's Summary page so a signature mismatch can be
+      # diagnosed without digging through 30 minutes of logs.
       - name: Show signing certificate fingerprint
+        env:
+          SOURCE: ${{ steps.keystore.outputs.source }}
+          KS_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD != '' && secrets.KEYSTORE_PASSWORD || 'taskflow-ci' }}
         run: |
-          set -euo pipefail
-          keytool -list -v -keystore taskflow-release.keystore \
-            -storepass taskflow-ci -alias taskflow 2>/dev/null \
-            | grep -E "SHA256|Valid from" | head -4 || true
+          set -uo pipefail
+          FINGERPRINT=$(keytool -list -v -keystore taskflow-release.keystore \
+            -storepass "$KS_PASSWORD" -alias taskflow 2>/dev/null \
+            | grep -i 'SHA256:' | head -1 | tr -s ' ' | cut -d' ' -f2-) || true
+          echo "Signing keystore source: ${SOURCE:-unknown}"
+          echo "SHA-256 fingerprint: ${FINGERPRINT:-unknown}"
+          {
+            echo '### Signing identity'
+            echo ''
+            echo '| Field | Value |'
+            echo '| --- | --- |'
+            echo "| Source | ${SOURCE:-unknown} |"
+            echo "| Ref | ${GITHUB_REF} |"
+            echo "| SHA-256 | ${FINGERPRINT:-unknown} |"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload keystore for the build job
         uses: actions/upload-artifact@v4
