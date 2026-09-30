@@ -96,34 +96,44 @@ jobs:
           cd android
           ./gradlew assembleRelease --no-daemon --stacktrace
 
-      # 1. Prefer a keystore supplied through secrets (stable, user-owned).
-      - name: Restore keystore from secrets
-        if: ${{ secrets.KEYSTORE_BASE64 != '' }}
-        run: echo "$KEYSTORE_BASE64" | base64 -d > taskflow-release.keystore
-        env:
-          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
-
-      # 2. Otherwise reuse the one this repo already minted.
+      # Signing identity, in three moves:
+      #   1. restore the keystore this repo minted on its first build, if any;
+      #   2. the shell step decides whether to prefer a secret, keep the restored
+      #      file, or mint a brand new one;
+      #   3. only a freshly minted key is written back to the cache.
+      # GitHub does not expose the `secrets` context to step `if` blocks, so the
+      # choice has to be made in bash rather than in the condition.
       - name: Restore cached keystore
-        id: keystore-cache
-        if: ${{ secrets.KEYSTORE_BASE64 == '' }}
         uses: actions/cache/restore@v4
         with:
           path: taskflow-release.keystore
           key: taskflow-release-keystore-v1
 
-      # 3. Only a first-ever build needs to create one.
-      - name: Create keystore
-        if: ${{ secrets.KEYSTORE_BASE64 == '' && steps.keystore-cache.outputs.cache-hit != 'true' }}
+      - name: Prepare signing keystore
+        id: keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
         run: |
-          keytool -genkeypair -v \
-            -keystore taskflow-release.keystore -alias taskflow \
-            -keyalg RSA -keysize 2048 -validity 10000 \
-            -storepass taskflow-ci -keypass taskflow-ci \
-            -dname "CN=TaskFlow, OU=CI, O=TaskFlow"
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > taskflow-release.keystore
+            echo "Using the keystore supplied through repository secrets."
+            echo "source=secret" >> "$GITHUB_OUTPUT"
+          elif [ -f taskflow-release.keystore ]; then
+            echo "Reusing the cached CI keystore — this APK can update an existing install."
+            echo "source=cache" >> "$GITHUB_OUTPUT"
+          else
+            keytool -genkeypair -v \
+              -keystore taskflow-release.keystore -alias taskflow \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass taskflow-ci -keypass taskflow-ci \
+              -dname "CN=TaskFlow, OU=CI, O=TaskFlow"
+            echo "Minted a new CI keystore; it is saved for every later build."
+            echo "source=generated" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Save keystore for future builds
-        if: ${{ secrets.KEYSTORE_BASE64 == '' && steps.keystore-cache.outputs.cache-hit != 'true' }}
+        if: steps.keystore.outputs.source == 'generated'
+        continue-on-error: true
         uses: actions/cache/save@v4
         with:
           path: taskflow-release.keystore
