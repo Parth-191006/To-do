@@ -67,7 +67,8 @@ jobs:
             -storepass taskflow-ci -keypass taskflow-ci \
             -dname "CN=TaskFlow, OU=CI, O=TaskFlow"
 
-          UNSIGNED="android/app/build/outputs/apk/release/app-release.apk"
+          UNSIGNED=$(ls android/app/build/outputs/apk/release/*.apk | head -1)
+          echo "Unsigned APK: $UNSIGNED"
           "$BT/zipalign" -f -p 4 "$UNSIGNED" aligned.apk
           "$BT/apksigner" sign \
             --ks taskflow-release.keystore \
