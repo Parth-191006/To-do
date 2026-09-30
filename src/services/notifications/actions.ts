@@ -10,6 +10,7 @@ import {
   ACTION_SNOOZE_5,
   ACTION_SNOOZE_60,
   ACTION_SNOOZE_TOMORROW,
+  ACTION_START_FOCUS,
 } from './categories';
 import { snoozeTask } from './scheduler';
 
@@ -26,6 +27,8 @@ export interface NotificationOutcome {
   habitId?: string;
   action: string;
   message: string;
+  /** In-app route the tap should navigate to, e.g. `/task/task_123`. */
+  url?: string;
 }
 
 function readData(response: Notifications.NotificationResponse): Record<string, unknown> {
@@ -45,12 +48,20 @@ export async function handleNotificationResponse(
     return { habitId, action, message: count > 0 ? 'Habit logged' : 'Habit updated' };
   }
 
+  const url = typeof data.url === 'string' ? data.url : undefined;
+
   if (!taskId) {
-    return null;
+    // Digest / test / focus alerts carry only a route. Tapping the banner used
+    // to do absolutely nothing for these.
+    return url ? { action: 'open', message: 'Opened from notification', url } : null;
+  }
+
+  if (action === ACTION_START_FOCUS) {
+    return { taskId, action, message: 'Opening the focus timer', url: '/focus' };
   }
 
   const task = await getTask(taskId);
-  if (!task) return { taskId, action, message: 'Task no longer exists' };
+  if (!task) return { taskId, action, message: 'Task no longer exists', url };
 
   switch (action) {
     case ACTION_COMPLETE: {
@@ -77,10 +88,28 @@ export async function handleNotificationResponse(
     }
     case ACTION_OPEN:
     case Notifications.DEFAULT_ACTION_IDENTIFIER:
-      return { taskId, action: 'open', message: 'Opened from notification' };
+      return {
+        taskId,
+        action: 'open',
+        message: `Opened “${task.title}”`,
+        url: url ?? `/task/${taskId}`,
+      };
     default:
       return null;
   }
+}
+
+/**
+ * Drains the tap that launched the app from cold.
+ *
+ * `addNotificationResponseReceivedListener` only fires for taps that happen
+ * while the process is alive, so a notification that started the app looked
+ * like it did nothing at all.
+ */
+export async function consumeInitialNotificationResponse(): Promise<NotificationOutcome | null> {
+  const response = await Notifications.getLastNotificationResponseAsync();
+  if (!response) return null;
+  return handleNotificationResponse(response).catch(() => null);
 }
 
 /** Subscribes to taps and dismissals. Returns an unsubscribe function. */

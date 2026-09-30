@@ -143,11 +143,16 @@ export function TaskCard({
         {...panResponder.panHandlers}
         style={{
           transform: [{ translateX: panX }],
-          backgroundColor: theme.colors.surface,
-          borderRadius: theme.radii.lg,
-          borderWidth: StyleSheet.hairlineWidth,
+          backgroundColor: done ? theme.colors.surfaceSunken : theme.colors.surface,
+          borderRadius: theme.radii.xl,
+          borderWidth: 1,
           borderColor: overdue ? theme.colors.danger : theme.colors.border,
           overflow: 'hidden',
+          shadowColor: theme.colors.shadow,
+          shadowOpacity: done ? 0 : 0.08,
+          shadowRadius: 10,
+          shadowOffset: { width: 0, height: 4 },
+          elevation: done ? 0 : 1,
         }}
       >
         <Pressable
@@ -158,10 +163,26 @@ export function TaskCard({
           {/* Priority stripe */}
           <View
             style={{
-              width: 4,
-              backgroundColor: task.priority === 'none' ? theme.colors.border : priorityColor,
+              width: 5,
+              backgroundColor:
+                task.priority === 'none'
+                  ? theme.colors.border
+                  : theme.colors.prioritySoft[task.priority],
+              borderRightWidth: task.priority === 'none' ? 0 : 1,
+              borderRightColor: theme.colors.border,
             }}
-          />
+          >
+            <View
+              style={{
+                width: 5,
+                height: 26,
+                marginTop: theme.spacing.md,
+                backgroundColor: task.priority === 'none' ? theme.colors.border : priorityColor,
+                borderTopRightRadius: 4,
+                borderBottomRightRadius: 4,
+              }}
+            />
+          </View>
 
           <View style={{ flex: 1, paddingVertical: theme.spacing.md, paddingHorizontal: theme.spacing.md, gap: 6 }}>
             <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: theme.spacing.sm }}>

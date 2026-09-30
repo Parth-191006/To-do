@@ -47,7 +47,10 @@
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
     "lint": "expo lint",
-    "verify:nlp": "node --experimental-strip-types scripts/verify-nlp.ts"
+    "verify:nlp": "node --experimental-strip-types scripts/verify-nlp.ts",
+    "verify:clock": "node --experimental-strip-types scripts/verify-focus-clock.ts",
+    "verify:habits": "node --experimental-strip-types scripts/verify-habits.ts",
+    "verify": "npm run typecheck && npm run verify:nlp && npm run verify:clock && npm run verify:habits"
   },
   "private": true
 }

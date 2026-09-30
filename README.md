@@ -34,7 +34,9 @@ tasks are restricted there — the scheduling code is written for a dev build.
 | `npm run ios` / `npm run android` / `npm run web` | Start on a specific platform |
 | `npm run typecheck` | `tsc --noEmit` over the whole app |
 | `npm run verify:nlp` | Runs 15 assertions against the real NLP parser |
-| `npm run lint` | `expo lint` |
+| `npm run verify:clock` | Runs 13 assertions against the Pomodoro clock state machine |
+| `npm run verify:habits` | Runs 13 assertions against streaks and the check-in toggle |
+| `npm run verify` | All of the above, in one go — run this before tagging a build |
 
 ## Environment (all optional)
 
@@ -111,6 +113,7 @@ src/
   theme/                  Design tokens + light/dark provider
 supabase/migrations/      Postgres schema + RLS policies
 scripts/verify-nlp.ts     Runnable parser assertions
+scripts/verify-*.ts       Runnable assertions for the timer + habit logic
 ```
 
 See **[ARCHITECTURE.md](./ARCHITECTURE.md)** for the full data schema, routing
@@ -122,8 +125,7 @@ choice.
 ## Verification
 
 ```bash
-npm run typecheck      # clean
-npm run verify:nlp     # 15 checks passed
+npm run verify         # typecheck + 41 assertions, all green
 npx expo export --platform android    # bundling smoke test
 ```
 

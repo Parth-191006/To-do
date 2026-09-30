@@ -5,11 +5,22 @@ name: Android APK
 #   2. Automatically — push a tag like v1.0.1; the APK is also attached to a
 #      GitHub Release, which is the easiest thing to download on a phone.
 #
-# The APK is signed with an ephemeral CI keystore. That makes every build
-# independently installable, but it also means each build has a different
-# signature: to upgrade, uninstall the previous build first (Android refuses
-# an update across different signatures). For stable signing, put your own
-# keystore in GitHub secrets — see docs/INSTALL.md.
+# Signing
+# -------
+# Android refuses to update an installed app across a signature change (and the
+# only way round it is to uninstall, which wipes local data). So the CI keystore
+# is generated ONCE and then kept in the Actions cache, keyed by
+# `taskflow-release-keystore-v1`. Every later build — manual or tagged — reuses
+# it, so builds update each other cleanly.
+#
+# To pin the signing key yourself instead, add these repository secrets and the
+# workflow will prefer them:
+#   KEYSTORE_BASE64, KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD
+# See docs/INSTALL.md.
+#
+# If the cache is ever evicted (~7 days without a run) a fresh key is minted and
+# you will need to uninstall once more; bump the key suffix to force that
+# deliberately.
 #
 # Build-time notes:
 #   - The first run is a cold Gradle build (~20–40 min on public runners).
@@ -85,23 +96,55 @@ jobs:
           cd android
           ./gradlew assembleRelease --no-daemon --stacktrace
 
-      - name: Align and sign APK
+      # 1. Prefer a keystore supplied through secrets (stable, user-owned).
+      - name: Restore keystore from secrets
+        if: ${{ secrets.KEYSTORE_BASE64 != '' }}
+        run: echo "$KEYSTORE_BASE64" | base64 -d > taskflow-release.keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+
+      # 2. Otherwise reuse the one this repo already minted.
+      - name: Restore cached keystore
+        id: keystore-cache
+        if: ${{ secrets.KEYSTORE_BASE64 == '' }}
+        uses: actions/cache/restore@v4
+        with:
+          path: taskflow-release.keystore
+          key: taskflow-release-keystore-v1
+
+      # 3. Only a first-ever build needs to create one.
+      - name: Create keystore
+        if: ${{ secrets.KEYSTORE_BASE64 == '' && steps.keystore-cache.outputs.cache-hit != 'true' }}
         run: |
-          BT="$(ls -d "$ANDROID_HOME/build-tools"/* | sort -V | tail -1)"
           keytool -genkeypair -v \
             -keystore taskflow-release.keystore -alias taskflow \
             -keyalg RSA -keysize 2048 -validity 10000 \
             -storepass taskflow-ci -keypass taskflow-ci \
             -dname "CN=TaskFlow, OU=CI, O=TaskFlow"
 
+      - name: Save keystore for future builds
+        if: ${{ secrets.KEYSTORE_BASE64 == '' && steps.keystore-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v4
+        with:
+          path: taskflow-release.keystore
+          key: taskflow-release-keystore-v1
+
+      - name: Align and sign APK
+        env:
+          KS_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD != '' && secrets.KEYSTORE_PASSWORD || 'taskflow-ci' }}
+          KS_ALIAS: ${{ secrets.KEY_ALIAS != '' && secrets.KEY_ALIAS || 'taskflow' }}
+          KS_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD != '' && secrets.KEY_PASSWORD || 'taskflow-ci' }}
+        run: |
+          BT="$(ls -d "$ANDROID_HOME/build-tools"/* | sort -V | tail -1)"
+
           UNSIGNED=$(ls android/app/build/outputs/apk/release/*.apk | head -1)
           echo "Unsigned APK: $UNSIGNED"
           "$BT/zipalign" -f -p 4 "$UNSIGNED" aligned.apk
           "$BT/apksigner" sign \
-            --ks taskflow-release.keystore \
-            --ks-pass pass:taskflow-ci --key-pass pass:taskflow-ci \
+            --ks taskflow-release.keystore --ks-key-alias "$KS_ALIAS" \
+            --ks-pass pass:"$KS_PASSWORD" --key-pass pass:"$KS_KEY_PASSWORD" \
             --out "TaskFlow-${{ github.ref_name }}.apk" aligned.apk
-          "$BT/apksigner" verify "TaskFlow-${{ github.ref_name }}.apk"
+          "$BT/apksigner" verify --print-certs "TaskFlow-${{ github.ref_name }}.apk" | head -4
           ls -lh "TaskFlow-${{ github.ref_name }}.apk"
 
       - name: Upload artifact (every run)

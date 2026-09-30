@@ -5,6 +5,7 @@ import { Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ProgressRing } from '@/components/ProgressRing';
+import { ProjectSheet } from '@/components/ProjectSheet';
 import { TaskCard } from '@/components/TaskCard';
 import { TaskEditorSheet } from '@/components/TaskEditorSheet';
 import { SmartInput } from '@/components/SmartInput';
@@ -29,9 +30,13 @@ export default function ProjectScreen() {
   const breakDownTask = useStore((state) => state.breakDownTask);
   const addTaskFromInput = useStore((state) => state.addTaskFromInput);
 
+  const removeProject = useStore((state) => state.removeProject);
+
   const [editingId, setEditingId] = useState<string | null>(null);
   const [members, setMembers] = useState<SharedListMember[]>([]);
   const [activity, setActivity] = useState<ActivityLog[]>([]);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const project = useMemo(() => projects.find((entry) => entry.id === id) ?? null, [id, projects]);
 
@@ -47,8 +52,12 @@ export default function ProjectScreen() {
 
   useEffect(() => {
     if (!id) return;
-    void listMembers(id).then(setMembers);
-    void listActivity('project', id).then(setActivity);
+    void listMembers(id)
+      .then(setMembers)
+      .catch(() => undefined);
+    void listActivity('project', id)
+      .then(setActivity)
+      .catch(() => undefined);
   }, [id, tasks]);
 
   const handleSubmit = useCallback(
@@ -74,11 +83,27 @@ export default function ProjectScreen() {
           paddingHorizontal: theme.spacing.lg,
           flexDirection: 'row',
           alignItems: 'center',
+          gap: theme.spacing.sm,
         }}
       >
-        <Pressable onPress={() => router.back()} hitSlop={10}>
+        <Pressable onPress={() => router.back()} hitSlop={10} accessibilityLabel="Back">
           <Ionicons name="chevron-back" size={22} color={theme.colors.textSecondary} />
         </Pressable>
+        <View style={{ flex: 1 }} />
+        <Chip label="Rename" icon="create-outline" onPress={() => setSheetOpen(true)} />
+        <Chip
+          label={confirmDelete ? 'Sure?' : 'Delete'}
+          icon="trash-outline"
+          color={theme.colors.danger}
+          onPress={() => {
+            if (!confirmDelete) {
+              setConfirmDelete(true);
+              setTimeout(() => setConfirmDelete(false), 3500);
+              return;
+            }
+            void removeProject(String(id)).then(() => router.back());
+          }}
+        />
       </View>
 
       <ScrollView
@@ -182,6 +207,12 @@ export default function ProjectScreen() {
         task={editingTask}
         visible={editingTask !== null}
         onClose={() => setEditingId(null)}
+      />
+
+      <ProjectSheet
+        visible={sheetOpen}
+        project={project}
+        onClose={() => setSheetOpen(false)}
       />
     </View>
   );

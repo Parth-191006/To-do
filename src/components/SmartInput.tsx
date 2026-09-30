@@ -69,6 +69,11 @@ export function SmartInput({
     try {
       await onSubmit(value, attachments);
       reset();
+    } catch (error) {
+      warning();
+      setStatusNote(
+        error instanceof Error ? error.message : 'Could not save that — please try again.',
+      );
     } finally {
       setBusy(false);
     }
@@ -182,7 +187,10 @@ export function SmartInput({
           autoFocus={autoFocus}
           multiline
           returnKeyType="done"
-          blurOnSubmit={false}
+          // Without this, Return inserts a newline on Android instead of
+          // submitting, and the task is never added — the arrow button was the
+          // only way to capture anything.
+          submitBehavior="submit"
           onSubmitEditing={handleSubmit}
           style={[
             theme.typography.body,

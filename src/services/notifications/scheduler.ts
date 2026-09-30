@@ -17,6 +17,7 @@ import {
   CATEGORY_FOCUS,
   CATEGORY_HABIT,
   CATEGORY_TASK,
+  configureNotificationChannels,
 } from './categories';
 
 /**
@@ -43,6 +44,17 @@ const CHANNEL_BY_PRIORITY: Record<Priority, string> = {
 
 const MINUTE = 60_000;
 
+/**
+ * Android silently drops a notification scheduled against a channel that does
+ * not exist yet, so every scheduling entry point makes sure its channels are
+ * registered first. Cheap and idempotent. The first call after a cold start may
+ * run before `configureNotifications()` settles, which is exactly the race this
+ * closes.
+ */
+async function readyChannels(): Promise<void> {
+  await configureNotificationChannels().catch(() => undefined);
+}
+
 export interface ScheduleResult {
   scheduled: number;
   skippedReason?: string;
@@ -52,7 +64,11 @@ export interface ScheduleResult {
 export async function ensureNotificationPermissions(): Promise<boolean> {
   const current = await Notifications.getPermissionsAsync();
   if (current.granted) return true;
-  if (!current.canAskAgain) return false;
+  // Once the OS has recorded a denial (Android 13+ reports `status: 'denied'`
+  // while still allowing one more prompt), re-asking in a loop is what made the
+  // permission feel broken. We ask once from 'undetermined' and otherwise defer
+  // to the Settings screen, which can deep-link into the system app settings.
+  if (current.status === 'denied' || !current.canAskAgain) return false;
   const next = await Notifications.requestPermissionsAsync({
     ios: {
       allowAlert: true,
@@ -69,7 +85,8 @@ export async function ensureNotificationPermissions(): Promise<boolean> {
 export async function getPermissionStatus(): Promise<'granted' | 'denied' | 'undetermined'> {
   const current = await Notifications.getPermissionsAsync();
   if (current.granted) return 'granted';
-  return current.canAskAgain ? 'undetermined' : 'denied';
+  if (current.status === 'denied' || !current.canAskAgain) return 'denied';
+  return 'undetermined';
 }
 
 /**
@@ -154,6 +171,8 @@ export async function scheduleTaskNotifications(task: TaskWithTags): Promise<Sch
 
   const allowed = await ensureNotificationPermissions();
   if (!allowed) return { scheduled: 0, skippedReason: 'Notification permission not granted' };
+
+  await readyChannels();
 
   const channelId = CHANNEL_BY_PRIORITY[task.priority];
   const plans: { at: Date; title: string; body: string; kind: 'task_reminder' | 'task_due' }[] = [];
@@ -242,6 +261,8 @@ export async function snoozeTask(
 
   if (!allowed) return 'permission-denied';
 
+  await readyChannels();
+
   const identifier = await Notifications.scheduleNotificationAsync({
     content: {
       title: options.title ?? 'Snoozed reminder',
@@ -283,6 +304,8 @@ export async function scheduleHabitReminder(
   const allowed = await ensureNotificationPermissions();
   if (!allowed) return;
 
+  await readyChannels();
+
   const channelId = Platform.OS === 'android' ? 'taskflow-habits' : undefined;
   await Notifications.scheduleNotificationAsync({
     content: {
@@ -290,7 +313,7 @@ export async function scheduleHabitReminder(
       body: `Keep your streak alive — ${habit.name}`,
       categoryIdentifier: CATEGORY_HABIT,
       sound: 'default',
-      data: { habitId: habit.id, kind: 'habit' },
+      data: { habitId: habit.id, kind: 'habit', url: '/habits' },
     },
     trigger: {
       type: Notifications.SchedulableTriggerInputTypes.DAILY,
@@ -311,18 +334,27 @@ export async function cancelHabitReminders(habitId: string): Promise<void> {
   }
 }
 
-/** Fires when a Pomodoro block ends. */
-export async function scheduleFocusEnd(at: Date, taskId: string | null, label: string): Promise<void> {
+/**
+ * Fires when a Pomodoro block ends. Returns the OS identifier so the timer can
+ * pull the pending alert when the block is paused, reset or skipped — otherwise
+ * pausing and resuming leaves a stale "block complete" banner behind.
+ */
+export async function scheduleFocusEnd(
+  at: Date,
+  taskId: string | null,
+  label: string,
+): Promise<string | null> {
   const allowed = await ensureNotificationPermissions();
-  if (!allowed) return;
-  await Notifications.scheduleNotificationAsync({
+  if (!allowed) return null;
+  await readyChannels();
+  return Notifications.scheduleNotificationAsync({
     content: {
       title: 'Focus block complete',
       body: label,
       categoryIdentifier: CATEGORY_FOCUS,
       sound: 'default',
       interruptionLevel: 'timeSensitive',
-      data: { taskId, kind: 'focus' },
+      data: { taskId, kind: 'focus', url: '/focus' },
     },
     trigger: {
       type: Notifications.SchedulableTriggerInputTypes.DATE,
@@ -332,10 +364,17 @@ export async function scheduleFocusEnd(at: Date, taskId: string | null, label: s
   });
 }
 
+/** Pulls a single scheduled notification, ignoring "already gone" errors. */
+export async function cancelScheduled(identifier: string | null): Promise<void> {
+  if (!identifier) return;
+  await Notifications.cancelScheduledNotificationAsync(identifier).catch(() => undefined);
+}
+
 /** Daily digest slot — a single "here is your day" nudge. */
 export async function scheduleDailyDigest(at: { hour: number; minute: number }): Promise<void> {
   const allowed = await ensureNotificationPermissions();
   if (!allowed) return;
+  await readyChannels();
   await Notifications.scheduleNotificationAsync({
     content: {
       title: 'Your day in TaskFlow',
@@ -353,6 +392,37 @@ export async function scheduleDailyDigest(at: { hour: number; minute: number }):
 
 export async function dismissAll(): Promise<void> {
   await Notifications.dismissAllNotificationsAsync();
+}
+
+/**
+ * Fires a real notification a few seconds out so the user can verify that the
+ * permission, the channel and the OS all actually work — end to end, on their
+ * own device, without waiting for a task to fall due.
+ */
+export async function sendTestNotification(
+  delaySeconds = 4,
+): Promise<{ ok: boolean; reason?: string }> {
+  const current = await Notifications.getPermissionsAsync();
+  const allowed = current.granted ? true : await ensureNotificationPermissions();
+  if (!allowed) return { ok: false, reason: 'Notification permission is off' };
+
+  await readyChannels();
+  await Notifications.scheduleNotificationAsync({
+    content: {
+      title: 'TaskFlow notifications are working',
+      body: 'This is exactly how your reminders will look.',
+      sound: 'default',
+      categoryIdentifier: CATEGORY_TASK,
+      color: '#6C5CE7',
+      data: { kind: 'test', url: '/' },
+    },
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+      seconds: Math.max(1, delaySeconds),
+      channelId: Platform.OS === 'android' ? 'taskflow-default' : undefined,
+    },
+  });
+  return { ok: true };
 }
 
 /** Wipes every scheduled notification — used by "reset my data". */

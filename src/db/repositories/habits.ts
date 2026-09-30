@@ -148,41 +148,8 @@ export async function listAllHabitLogs(sinceDateKey?: string): Promise<HabitLog[
   return rows.map(toHabitLog);
 }
 
-function shiftDateKey(dateKey: string, days: number): string {
-  const [y, m, d] = dateKey.split('-').map(Number);
-  const date = new Date(y, m - 1, d);
-  date.setDate(date.getDate() + days);
-  return toDateKey(date);
-}
-
 /**
- * Current consecutive-day streak. Today is "in progress" — a gap of one day
- * does not break the streak until the day is over.
+ * Streak maths lives in `@/domain/habits` (pure, database-free); it is
+ * re-exported here so existing imports keep working.
  */
-export function computeStreak(logs: HabitLog[], today = toDateKey()): number {
-  const completed = new Set(logs.filter((l) => l.count > 0).map((l) => l.dateKey));
-  if (completed.size === 0) return 0;
-
-  let cursor = completed.has(today) ? today : shiftDateKey(today, -1);
-  if (!completed.has(cursor)) return 0;
-
-  let streak = 0;
-  while (completed.has(cursor)) {
-    streak += 1;
-    cursor = shiftDateKey(cursor, -1);
-  }
-  return streak;
-}
-
-export function longestStreak(logs: HabitLog[]): number {
-  const days = Array.from(new Set(logs.filter((l) => l.count > 0).map((l) => l.dateKey))).sort();
-  let best = 0;
-  let run = 0;
-  let previous: string | null = null;
-  for (const day of days) {
-    run = previous && shiftDateKey(previous, 1) === day ? run + 1 : 1;
-    best = Math.max(best, run);
-    previous = day;
-  }
-  return best;
-}
+export { computeStreak, longestStreak, habitToggleDelta, shiftDateKey } from '@/domain/habits';

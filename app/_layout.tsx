@@ -1,13 +1,18 @@
 import { Ionicons } from '@expo/vector-icons';
-import { Stack } from 'expo-router';
+import { Stack, useRouter } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
-import React, { useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useRef } from 'react';
 import { Animated, StyleSheet, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { Text } from '@/components/ui';
-import { configureNotifications, subscribeToNotificationResponses } from '@/services/notifications';
+import {
+  configureNotifications,
+  consumeInitialNotificationResponse,
+  subscribeToNotificationResponses,
+  type NotificationOutcome,
+} from '@/services/notifications';
 import { useStore } from '@/store/useStore';
 import { ThemeProvider, useTheme } from '@/theme/ThemeProvider';
 
@@ -19,19 +24,41 @@ export default function RootLayout() {
   const refresh = useStore((state) => state.refresh);
   const lastOutcome = useStore((state) => state.lastOutcome);
   const setLastOutcome = useStore((state) => state.setLastOutcome);
+  const router = useRouter();
 
   useEffect(() => {
     void configureNotifications();
     void bootstrap();
   }, [bootstrap]);
 
-  // Actionable notification taps mutate data outside React; refresh on return.
-  useEffect(() => {
-    return subscribeToNotificationResponses((outcome) => {
+  /**
+   * Actionable notification taps mutate data outside React, so we always
+   * refresh, and we navigate when the tap carried a destination.
+   */
+  const handleOutcome = useCallback(
+    (outcome: NotificationOutcome) => {
       setLastOutcome(outcome.message);
       void refresh();
+      if (outcome.url) {
+        // Let the navigator mount before pushing.
+        setTimeout(() => router.push(outcome.url as never), 60);
+      }
+    },
+    [refresh, router, setLastOutcome],
+  );
+
+  // Taps that arrive while the app is alive…
+  useEffect(() => subscribeToNotificationResponses(handleOutcome), [handleOutcome]);
+
+  // …and the tap that launched the app from cold.
+  const drainedInitialRef = useRef(false);
+  useEffect(() => {
+    if (drainedInitialRef.current) return;
+    drainedInitialRef.current = true;
+    void consumeInitialNotificationResponse().then((outcome) => {
+      if (outcome) handleOutcome(outcome);
     });
-  }, [refresh, setLastOutcome]);
+  }, [handleOutcome]);
 
   useEffect(() => {
     if (status === 'ready' || status === 'error') {
@@ -59,6 +86,7 @@ function ThemedShell({
   const opacity = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
+    opacity.setValue(0);
     if (!lastOutcome) return;
     Animated.sequence([
       Animated.timing(opacity, { toValue: 1, duration: 180, useNativeDriver: true }),

@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import React, { useCallback, useRef } from 'react';
 import {
   Animated,
@@ -60,14 +61,16 @@ export function Card({ children, style, padded = true, elevated = false }: CardP
         {
           backgroundColor: elevated ? theme.colors.surfaceElevated : theme.colors.surface,
           borderRadius: theme.radii.xl,
-          borderWidth: StyleSheet.hairlineWidth,
+          borderWidth: 1,
           borderColor: theme.colors.border,
           padding: padded ? theme.spacing.lg : 0,
+          // Cards carry a little weight even when not explicitly elevated — a
+          // hairline border alone on a flat background read as unfinished.
           shadowColor: theme.colors.shadow,
-          shadowOpacity: elevated ? 0.18 : 0,
-          shadowRadius: 18,
-          shadowOffset: { width: 0, height: 8 },
-          elevation: elevated ? 3 : 0,
+          shadowOpacity: elevated ? 0.22 : 0.1,
+          shadowRadius: elevated ? 22 : 12,
+          shadowOffset: { width: 0, height: elevated ? 10 : 5 },
+          elevation: elevated ? 4 : 1,
         },
         style,
       ]}
@@ -185,18 +188,21 @@ export function EmptyState({ icon = 'sparkles-outline', title, subtitle, action 
   const theme = useTheme();
   return (
     <View style={{ alignItems: 'center', paddingVertical: theme.spacing['2xl'], gap: theme.spacing.sm }}>
-      <View
+      <LinearGradient
+        colors={theme.colors.accentGradient}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
         style={{
-          width: 56,
-          height: 56,
-          borderRadius: 28,
+          width: 60,
+          height: 60,
+          borderRadius: 30,
           alignItems: 'center',
           justifyContent: 'center',
-          backgroundColor: theme.colors.accentSoft,
+          marginBottom: theme.spacing.xs,
         }}
       >
-        <Ionicons name={icon} size={26} color={theme.colors.accent} />
-      </View>
+        <Ionicons name={icon} size={27} color={theme.colors.accentContrast} />
+      </LinearGradient>
       <Text variant="heading" align="center">
         {title}
       </Text>

@@ -1,12 +1,23 @@
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { AppState, ScrollView, View } from 'react-native';
 
-import { scheduleFocusEnd } from '@/services/notifications/scheduler';
+import { cancelScheduled, scheduleFocusEnd } from '@/services/notifications/scheduler';
 import { isOpen } from '@/store/selectors';
 import { useStore } from '@/store/useStore';
 import { useTheme } from '@/theme/ThemeProvider';
-import { selection, success, tapLight } from '@/utils/haptics';
+import {
+  clockLabel,
+  createClock,
+  elapsedMs,
+  isExpired,
+  pauseClock,
+  progressOf,
+  startClock,
+  tickClock,
+} from '@/utils/focusClock';
+import { selection, success, tapLight, warning } from '@/utils/haptics';
 
 import { ProgressRing } from './ProgressRing';
 import { Chip, ScalePress, Text } from './ui';
@@ -14,19 +25,24 @@ import { Chip, ScalePress, Text } from './ui';
 const FOCUS_PRESETS = [15, 25, 45, 50];
 const BREAK_PRESETS = [5, 10, 15];
 
-function formatClock(totalSeconds: number): string {
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${`${minutes}`.padStart(2, '0')}:${`${seconds}`.padStart(2, '0')}`;
-}
+/** How often a running block re-reads the wall clock. */
+const TICK_MS = 250;
+
+type Mode = 'focus' | 'break';
 
 /**
  * Pomodoro focus timer linked to a task.
  *
- * Sessions are persisted through the store, so total focus time per project
- * feeds the analytics panel and the per-task session count. The end-of-block
- * notification is scheduled with the OS, which means the timer stays accurate
- * even if the app is backgrounded or killed.
+ * The clock itself lives in `@/utils/focusClock`, a pure state machine, so the
+ * parts that used to misbehave are unit-testable:
+ *
+ *  - Pausing keeps your remaining time. The previous implementation reset the
+ *    clock to the full duration the moment `running` became false, so "Pause"
+ *    behaved like "Restart" and threw away the block.
+ *  - Backgrounding no longer freezes the countdown, because remaining time is
+ *    derived from a wall-clock deadline rather than a count of interval ticks.
+ *  - One focus session row covers the whole block, so pausing does not shatter a
+ *    single Pomodoro into several partial sessions in your analytics.
  */
 export function FocusTimer() {
   const theme = useTheme();
@@ -37,17 +53,27 @@ export function FocusTimer() {
   const beginFocus = useStore((s) => s.beginFocus);
   const finishFocus = useStore((s) => s.finishFocus);
   const toggleTask = useStore((s) => s.toggleTask);
+  const setLastOutcome = useStore((s) => s.setLastOutcome);
 
-  const [mode, setMode] = useState<'focus' | 'break'>('focus');
+  const [mode, setMode] = useState<Mode>('focus');
   const [focusMinutes, setFocusMinutes] = useState(25);
   const [breakMinutes, setBreakMinutes] = useState(5);
-  const [secondsLeft, setSecondsLeft] = useState(25 * 60);
-  const [running, setRunning] = useState(false);
-  const [sessionId, setSessionId] = useState<string | null>(null);
   const [taskId, setTaskId] = useState<string | null>(null);
-  const elapsedRef = useRef(0);
 
-  const totalSeconds = (mode === 'focus' ? focusMinutes : breakMinutes) * 60;
+  const totalMs = (mode === 'focus' ? focusMinutes : breakMinutes) * 60_000;
+
+  const [clock, setClock] = useState(() => createClock(25 * 60_000));
+  const [sessionId, setSessionId] = useState<string | null>(null);
+
+  const sessionIdRef = useRef<string | null>(null);
+  /** OS identifier of the pending "block complete" alert. */
+  const notifyIdRef = useRef<string | null>(null);
+  const finishingRef = useRef(false);
+  const finishFocusRef = useRef(finishFocus);
+  finishFocusRef.current = finishFocus;
+
+  const running = clock.phase === 'running';
+  const remainingMs = clock.remainingMs;
 
   const openTasks = useMemo(
     () => tasks.filter((task) => task.parentId === null && isOpen(task)).slice(0, 20),
@@ -69,121 +95,234 @@ export function FocusTimer() {
       .reduce((total, session) => total + session.durationSeconds, 0);
   }, [focusSessions]);
 
-  /** Restarts the clock whenever the configured duration or mode changes. */
-  useEffect(() => {
-    if (running) return;
-    setSecondsLeft(totalSeconds);
-    elapsedRef.current = 0;
-  }, [running, totalSeconds]);
+  /** Closes the open focus session with the time actually spent. */
+  const finishSession = useCallback(async (completed: boolean, consumedMs: number) => {
+    const id = sessionIdRef.current;
+    sessionIdRef.current = null;
+    setSessionId(null);
+    if (!id) return;
+    await finishFocusRef.current(id, Math.max(0, Math.round(consumedMs / 1000)), completed).catch(
+      () => undefined,
+    );
+  }, []);
 
+  const clearAlert = useCallback(() => {
+    void cancelScheduled(notifyIdRef.current);
+    notifyIdRef.current = null;
+  }, []);
+
+  /**
+   * Switching length or mode always starts a brand new block. Guarded by a
+   * ref so that merely *pausing* — which changes no duration — never resets the
+   * clock. That guard is the fix for the "Pause restarts the timer" bug.
+   */
+  const lastTotalRef = useRef(totalMs);
+  const clockRef = useRef(clock);
+  clockRef.current = clock;
   useEffect(() => {
-    if (!running) return;
-    const interval = setInterval(() => {
-      setSecondsLeft((current) => {
-        elapsedRef.current += 1;
-        return current <= 1 ? 0 : current - 1;
-      });
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [running]);
+    if (lastTotalRef.current === totalMs) return;
+    lastTotalRef.current = totalMs;
+    const consumed = elapsedMs(clockRef.current);
+    setClock(createClock(totalMs));
+    clearAlert();
+    if (sessionIdRef.current) {
+      // Abandoning a block mid-flight still banks whatever was earned.
+      void finishSession(false, consumed);
+    }
+  }, [clearAlert, finishSession, totalMs]);
+
+  /** Ends the current block (naturally, or via Skip) and flips to the other mode. */
+  const completeBlock = useCallback(
+    async (reachedZero: boolean) => {
+      if (finishingRef.current) return;
+      finishingRef.current = true;
+      try {
+        const consumed = reachedZero ? clock.blockMs : elapsedMs(clock);
+        notifyIdRef.current = null;
+
+        if (mode === 'focus') {
+          await finishSession(reachedZero, consumed);
+        }
+        if (reachedZero) success();
+
+        const nextMode: Mode = mode === 'focus' ? 'break' : 'focus';
+        setMode(nextMode);
+        setClock(createClock((nextMode === 'focus' ? focusMinutes : breakMinutes) * 60_000));
+        setLastOutcome(
+          mode === 'focus'
+            ? 'Focus block complete — time for a break'
+            : 'Break over — ready for another block?',
+        );
+      } finally {
+        finishingRef.current = false;
+      }
+    },
+    [breakMinutes, clock, finishSession, focusMinutes, mode, setLastOutcome],
+  );
 
   const start = useCallback(async () => {
     tapLight();
-    if (mode === 'focus') {
-      const session = await beginFocus(taskId, linkedTask?.projectId ?? null);
-      setSessionId(session.id);
-      await scheduleFocusEnd(
-        new Date(Date.now() + totalSeconds * 1000),
-        taskId,
-        linkedTask ? `Time is up — ${linkedTask.title}` : 'Great work. Take a break.',
-      ).catch(() => undefined);
-    }
-    setRunning(true);
-  }, [beginFocus, linkedTask, mode, taskId, totalSeconds]);
+    const next = startClock(clock, Date.now(), totalMs);
+    setClock(next);
 
-  const stop = useCallback(
-    async (completed: boolean) => {
-      setRunning(false);
-      if (mode === 'focus' && sessionId) {
-        await finishFocus(sessionId, elapsedRef.current, completed);
-        setSessionId(null);
+    if (!next.deadline) return;
+    const label = linkedTask
+      ? `Time is up — ${linkedTask.title}`
+      : mode === 'focus'
+        ? 'Great work. Take a break.'
+        : 'Break over — ready for another block?';
+
+    if (mode === 'focus' && !sessionIdRef.current) {
+      try {
+        const session = await beginFocus(taskId, linkedTask?.projectId ?? null);
+        sessionIdRef.current = session.id;
+        setSessionId(session.id);
+      } catch {
+        // A failed bookkeeping write must not stop the user's timer.
+        warning();
       }
-    },
-    [finishFocus, mode, sessionId],
-  );
+    }
 
-  // Reaching zero ends the block and hands the user straight to the break.
+    clearAlert();
+    notifyIdRef.current = await scheduleFocusEnd(new Date(next.deadline), taskId, label).catch(
+      () => null,
+    );
+  }, [beginFocus, clearAlert, clock, linkedTask, mode, taskId, totalMs]);
+
+  const pause = useCallback(() => {
+    setClock((current) => pauseClock(current, Date.now()));
+    // The block is no longer going to end on its own, so pull the alert.
+    clearAlert();
+  }, [clearAlert]);
+
+  /** Skip: bank the partial block and move on to the other mode. */
+  const skip = useCallback(() => {
+    tapLight();
+    clearAlert();
+    void completeBlock(false);
+  }, [clearAlert, completeBlock]);
+
+  // The ticker only exists while a block is actually running.
   useEffect(() => {
-    if (secondsLeft !== 0 || !running) return;
-    success();
-    void stop(true).then(() => {
-      setMode((current) => (current === 'focus' ? 'break' : 'focus'));
-    });
-  }, [running, secondsLeft, stop]);
+    if (!running) return;
+    const interval = setInterval(() => setClock((current) => tickClock(current, Date.now())), TICK_MS);
+    return () => clearInterval(interval);
+  }, [running]);
 
-  const progress = totalSeconds === 0 ? 0 : 1 - secondsLeft / totalSeconds;
-  const ringColor = mode === 'focus' ? theme.colors.accent : theme.colors.success;
+  // Coming back to the foreground re-reads the deadline immediately, so a block
+  // that elapsed while the app was suspended lands correctly instead of stalling.
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (next) => {
+      if (next !== 'active') return;
+      setClock((current) => tickClock(current, Date.now()));
+    });
+    return () => subscription.remove();
+  }, []);
+
+  // Expiry is a state change, not an event, so it is observed rather than fired.
+  useEffect(() => {
+    if (!isExpired(clock)) return;
+    void completeBlock(true);
+  }, [clock, completeBlock]);
+
+  // Leaving the screen mid-block should not leave a dangling open session.
+  useEffect(() => {
+    return () => {
+      const id = sessionIdRef.current;
+      if (!id) return;
+      const consumed = elapsedMs(clockRef.current);
+      sessionIdRef.current = null;
+      void finishFocusRef.current(id, Math.round(consumed / 1000), false).catch(() => undefined);
+    };
+  }, []);
+
+  const minutesSpent = Math.floor(elapsedMs(clock) / 60_000);
 
   return (
     <View style={{ gap: theme.spacing.lg }}>
       <View style={{ alignItems: 'center', gap: theme.spacing.md }}>
-        <ProgressRing progress={progress} size={216} strokeWidth={14} color={ringColor}>
-          <Text variant="micro" color={theme.colors.textTertiary}>
-            {mode === 'focus' ? 'FOCUS' : 'BREAK'}
+        <ProgressRing
+          progress={progressOf(clock)}
+          size={228}
+          strokeWidth={15}
+          color={mode === 'focus' ? theme.colors.accent : theme.colors.success}
+        >
+          <Text variant="micro" color={mode === 'focus' ? theme.colors.accent : theme.colors.success}>
+            {clock.phase === 'paused' ? 'PAUSED' : mode === 'focus' ? 'FOCUS' : 'BREAK'}
           </Text>
-          <Text style={{ fontSize: 44, fontWeight: '800', color: theme.colors.textPrimary }}>
-            {formatClock(secondsLeft)}
+          <Text style={{ fontSize: 46, fontWeight: '800', color: theme.colors.textPrimary }}>
+            {clockLabel(remainingMs)}
           </Text>
           {linkedTask ? (
-            <Text variant="caption" color={theme.colors.textSecondary} numberOfLines={1} style={{ maxWidth: 140 }}>
+            <Text
+              variant="caption"
+              color={theme.colors.textSecondary}
+              numberOfLines={1}
+              style={{ maxWidth: 150 }}
+            >
               {linkedTask.title}
             </Text>
-          ) : null}
+          ) : (
+            <Text variant="caption" color={theme.colors.textTertiary}>
+              {minutesSpent > 0 ? `${minutesSpent} min in` : 'Pick a task below'}
+            </Text>
+          )}
         </ProgressRing>
 
-        <View style={{ flexDirection: 'row', gap: theme.spacing.sm }}>
+        <View style={{ flexDirection: 'row', gap: theme.spacing.sm, alignItems: 'center' }}>
           <ScalePress
             haptic={false}
-            onPress={() => (running ? void stop(false) : void start())}
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: theme.spacing.sm,
-              backgroundColor: ringColor,
-              borderRadius: theme.radii.pill,
-              paddingVertical: 13,
-              paddingHorizontal: theme.spacing['2xl'],
-            }}
+            onPress={() => (running ? pause() : void start())}
+            style={{ borderRadius: theme.radii.pill, overflow: 'hidden' }}
           >
-            <Ionicons
-              name={running ? 'pause' : 'play'}
-              size={18}
-              color={theme.colors.accentContrast}
-            />
-            <Text variant="bodyStrong" color={theme.colors.accentContrast}>
-              {running ? 'Pause' : 'Start'}
-            </Text>
+            <LinearGradient
+              colors={
+                mode === 'focus'
+                  ? theme.colors.accentGradient
+                  : ([theme.colors.success, theme.colors.success] as [string, string])
+              }
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: theme.spacing.sm,
+                paddingVertical: 14,
+                paddingHorizontal: theme.spacing['2xl'],
+              }}
+            >
+              <Ionicons
+                name={running ? 'pause' : 'play'}
+                size={18}
+                color={theme.colors.accentContrast}
+              />
+              <Text variant="bodyStrong" color={theme.colors.accentContrast}>
+                {running ? 'Pause' : clock.phase === 'paused' ? 'Resume' : 'Start'}
+              </Text>
+            </LinearGradient>
           </ScalePress>
 
           <ScalePress
             haptic={false}
-            onPress={() => {
-              void stop(false).then(() => {
-                setMode((current) => (current === 'focus' ? 'break' : 'focus'));
-              });
-            }}
+            onPress={skip}
             style={{
               alignItems: 'center',
               justifyContent: 'center',
-              width: 48,
-              height: 48,
-              borderRadius: 24,
+              width: 50,
+              height: 50,
+              borderRadius: 25,
               backgroundColor: theme.colors.surfaceSunken,
             }}
           >
-            <Ionicons name="swap-horizontal" size={20} color={theme.colors.textSecondary} />
+            <Ionicons name="play-skip-forward" size={19} color={theme.colors.textSecondary} />
           </ScalePress>
         </View>
+
+        {clock.phase === 'paused' ? (
+          <Text variant="micro" color={theme.colors.textTertiary}>
+            PAUSED — YOUR REMAINING TIME IS KEPT
+          </Text>
+        ) : null}
       </View>
 
       <View style={{ gap: theme.spacing.sm }}>
@@ -202,8 +341,6 @@ export function FocusTimer() {
                   selection();
                   if (mode === 'focus') setFocusMinutes(preset);
                   else setBreakMinutes(preset);
-                  setSecondsLeft(preset * 60);
-                  elapsedRef.current = 0;
                 }}
               />
             );
@@ -235,7 +372,7 @@ export function FocusTimer() {
           gap: theme.spacing.md,
           backgroundColor: theme.colors.surface,
           borderRadius: theme.radii.xl,
-          borderWidth: StyleSheet.hairlineWidth,
+          borderWidth: 1,
           borderColor: theme.colors.border,
           padding: theme.spacing.lg,
         }}
@@ -259,6 +396,12 @@ export function FocusTimer() {
           />
         ) : null}
       </View>
+
+      {sessionId === null && clock.phase === 'idle' && focusToday === 0 ? (
+        <Text variant="micro" color={theme.colors.textTertiary}>
+          YOUR BLOCK KEEPS RUNNING IN THE BACKGROUND — A NOTIFICATION TELLS YOU WHEN TIME IS UP.
+        </Text>
+      ) : null}
     </View>
   );
 }

@@ -1,11 +1,16 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
 import React from 'react';
+import { StyleSheet } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useTheme } from '@/theme/ThemeProvider';
 
 export default function TabsLayout() {
   const theme = useTheme();
+  // The bar used to be a fixed 84px tall regardless of the device, which left
+  // it floating above gesture-nav phones and cramped on button-nav ones.
+  const insets = useSafeAreaInsets();
 
   return (
     <Tabs
@@ -16,12 +21,18 @@ export default function TabsLayout() {
         tabBarStyle: {
           backgroundColor: theme.colors.surface,
           borderTopColor: theme.colors.border,
-          borderTopWidth: 0.5,
-          height: 84,
-          paddingTop: 8,
-          paddingBottom: 24,
+          borderTopWidth: StyleSheet.hairlineWidth,
+          height: 58 + insets.bottom,
+          paddingTop: 6,
+          paddingBottom: insets.bottom + 6,
+          shadowColor: theme.colors.shadow,
+          shadowOpacity: 0.18,
+          shadowRadius: 16,
+          shadowOffset: { width: 0, height: -6 },
+          elevation: 8,
         },
         tabBarLabelStyle: { fontSize: 10, fontWeight: '700', letterSpacing: 0.3 },
+        tabBarItemStyle: { paddingTop: 2 },
         sceneStyle: { backgroundColor: theme.colors.background },
       }}
     >

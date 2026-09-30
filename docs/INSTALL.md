@@ -41,23 +41,31 @@ Any of these works:
 
 ### Updating later
 
-This CI APK is signed with an ephemeral per-build key, so Android treats each
-build as a different app: **uninstall the old one first**, then install the new
-APK. Your data is local, so uninstalling removes tasks/habits — note them down
-if you need them.
+The workflow signs every build with the **same** key (it mints one on the very
+first run and keeps it in the Actions cache afterwards), so a newer APK installs
+straight over the old one and your tasks are preserved.
 
-Want in-place updates and a stable signature? See
+Two cases still need a clean install — uninstall first, then install the new
+APK. Your data is local, so uninstalling removes tasks and habits:
+
+- the very first cached-keystore build if you are upgrading from a build made
+  before keystore caching existed;
+- a build made after the cache expired (roughly 7 days without a run).
+
+For an identity that can never lapse, pin your own key — see
 [Release with your own keystore](#release-with-your-own-keystore).
 
 ### Troubleshooting
 
 | Symptom | Fix |
 | --- | --- |
-| "App not installed" | Uninstall any previous TaskFlow build first (signature mismatch), then retry. |
+| "App not installed" | Signature mismatch — uninstall TaskFlow, then install again. |
 | Install blocked entirely | Settings → Security → enable **Install unknown apps** for the app you used to open the APK (Chrome, Files, Drive…). |
 | Downloaded `.apk` keeps failing | Some browsers rename it `.zip` — rename it back to `.apk`. |
 | Build failed on GitHub | Open the Actions run, check the red step; re-run once (npm/registry flake) before debugging. |
-| Notifications don't appear | Open the app once, then check Settings → Notifications → TaskFlow → allow. |
+| Notifications don't appear | Open TaskFlow → ⚙ Settings → **Notifications**, tap **Send a test**, and allow the permission (or tap **Open system settings** if Android has blocked it). Then **Re-arm all reminders**. |
+| Focus timer resets when paused | Fixed — update to the latest APK. |
+| "New project" does nothing | Fixed — the FAB item is now **New list**, and opens a sheet for the name and colour. |
 
 ---
 

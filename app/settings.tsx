@@ -1,7 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
+import Constants from 'expo-constants';
 import { useRouter } from 'expo-router';
-import React, { useCallback, useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Divider, Chip, Text } from '@/components/ui';
@@ -11,6 +12,8 @@ import {
   ensureNotificationPermissions,
   getPermissionStatus,
   scheduleDailyDigest,
+  scheduleTaskNotifications,
+  sendTestNotification,
 } from '@/services/notifications';
 import { isSupabaseConfigured } from '@/services/supabase/client';
 import { pendingChangeCount, runSync } from '@/services/sync/engine';
@@ -38,7 +41,19 @@ export default function SettingsScreen() {
   const [permission, setPermission] = useState<'granted' | 'denied' | 'undetermined'>('undetermined');
   const [pending, setPending] = useState(0);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  /** Tasks that still have a future reminder or due time waiting on the OS. */
+  const armed = useMemo(
+    () =>
+      tasks.filter((task) => {
+        if (task.status === 'done' || task.status === 'archived') return false;
+        const next = task.remindAt ?? task.dueAt;
+        return next !== null && new Date(next).getTime() > Date.now();
+      }).length,
+    [tasks],
+  );
 
   const refreshStatus = useCallback(async () => {
     setPermission(await getPermissionStatus());
@@ -49,11 +64,52 @@ export default function SettingsScreen() {
     void refreshStatus();
   }, [refreshStatus]);
 
+  /**
+   * Asks only from a clean slate. Once Android has recorded a denial it will no
+   * longer show a dialog, so re-requesting looks like a dead button — instead we
+   * send the user to the OS screen where the toggle actually lives.
+   */
   const handleEnableNotifications = useCallback(async () => {
-    await ensureNotificationPermissions();
-    await scheduleDailyDigest({ hour: 8, minute: 30 });
+    if (permission === 'denied') {
+      await Linking.openSettings().catch(() => undefined);
+      setNotice('Turn on notifications for TaskFlow, then come back and re-arm your reminders.');
+      return;
+    }
+    const granted = await ensureNotificationPermissions();
+    if (granted) {
+      await scheduleDailyDigest({ hour: 8, minute: 30 });
+      setNotice('Notifications enabled — your daily 8:30am digest is armed.');
+    } else {
+      setNotice('Notification permission was not granted.');
+    }
+    await refreshStatus();
+  }, [permission, refreshStatus]);
+
+  const handleTestNotification = useCallback(async () => {
+    const result = await sendTestNotification();
+    setNotice(
+      result.ok
+        ? 'Sending… you should see the banner in about 4 seconds. Lock the screen to be sure.'
+        : (result.reason ?? 'Could not send a test notification.'),
+    );
     await refreshStatus();
   }, [refreshStatus]);
+
+  /** Re-arms every future reminder through the OS in one shot. */
+  const handleRescheduleAll = useCallback(async () => {
+    setBusy(true);
+    try {
+      let count = 0;
+      for (const task of tasks) {
+        const result = await scheduleTaskNotifications(task).catch(() => ({ scheduled: 0 }));
+        count += result.scheduled;
+      }
+      setNotice(`Re-armed ${count} reminder${count === 1 ? '' : 's'}.`);
+      await refreshStatus();
+    } finally {
+      setBusy(false);
+    }
+  }, [refreshStatus, tasks]);
 
   const handleSync = useCallback(async () => {
     setBusy(true);
@@ -123,19 +179,78 @@ export default function SettingsScreen() {
         </Section>
 
         <Section title="Notifications" icon="notifications-outline">
-          <Row label="Permission" value={permission} />
-          <Row label="Scheduled reminders" value={`${pending} local change(s)`} />
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: theme.spacing.md,
+              backgroundColor:
+                permission === 'granted' ? theme.colors.successSoft : theme.colors.warningSoft,
+              borderRadius: theme.radii.lg,
+              padding: theme.spacing.md,
+            }}
+          >
+            <Ionicons
+              name={permission === 'granted' ? 'notifications' : 'notifications-off-outline'}
+              size={20}
+              color={permission === 'granted' ? theme.colors.success : theme.colors.warning}
+            />
+            <View style={{ flex: 1 }}>
+              <Text variant="bodyStrong">
+                {permission === 'granted'
+                  ? 'Notifications are on'
+                  : permission === 'denied'
+                    ? 'Notifications are blocked'
+                    : 'Notifications are not set up'}
+              </Text>
+              <Text variant="caption" color={theme.colors.textSecondary}>
+                {permission === 'granted'
+                  ? `${armed} reminder${armed === 1 ? '' : 's'} armed for later`
+                  : permission === 'denied'
+                    ? 'Android is blocking TaskFlow — open system settings to allow them.'
+                    : 'Allow them so reminders and focus alarms can reach you.'}
+              </Text>
+            </View>
+          </View>
+
+          <Row label="Scheduled reminders" value={`${armed}`} />
+          <Row label="Unsynced changes" value={`${pending}`} />
+
           <View style={{ flexDirection: 'row', gap: theme.spacing.sm, flexWrap: 'wrap' }}>
             <Chip
-              label={permission === 'granted' ? 'Re-register digest' : 'Enable notifications'}
-              icon="alarm-outline"
+              label={
+                permission === 'granted'
+                  ? 'Re-register digest'
+                  : permission === 'denied'
+                    ? 'Open system settings'
+                    : 'Enable notifications'
+              }
+              icon={permission === 'denied' ? 'settings-outline' : 'alarm-outline'}
               selected={permission !== 'granted'}
               onPress={() => void handleEnableNotifications()}
             />
+            <Chip
+              label="Send a test"
+              icon="paper-plane-outline"
+              onPress={() => void handleTestNotification()}
+            />
+            <Chip
+              label={busy ? 'Working…' : 'Re-arm all reminders'}
+              icon="refresh"
+              onPress={() => void handleRescheduleAll()}
+            />
           </View>
+
+          {notice ? (
+            <Text variant="caption" color={theme.colors.accent}>
+              {notice}
+            </Text>
+          ) : null}
+
           <Text variant="micro" color={theme.colors.textTertiary}>
             TASKFLOW POSTS TIME, RECURRING AND LOCATION ALERTS. COMPLETE, SNOOZE 5M / 1H / TOMORROW AND OPEN
-            ARE AVAILABLE STRAIGHT FROM THE BANNER.
+            ARE AVAILABLE STRAIGHT FROM THE BANNER. URGENT TASKS USE A HIGH-PRIORITY CHANNEL — TUNE
+            EACH ONE UNDER ANDROID SETTINGS › APPS › TASKFLOW › NOTIFICATIONS.
           </Text>
         </Section>
 
@@ -176,7 +291,7 @@ export default function SettingsScreen() {
           </Text>
           <Divider />
           <Text variant="micro" color={theme.colors.textTertiary}>
-            VERSION 1.0.0 · BUILT WITH EXPO + SQLITE + SUPABASE
+            VERSION {Constants.expoConfig?.version ?? '—'} · BUILT WITH EXPO + SQLITE + SUPABASE
           </Text>
         </Section>
       </ScrollView>
