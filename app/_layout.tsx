@@ -1,0 +1,120 @@
+import { Ionicons } from '@expo/vector-icons';
+import { Stack } from 'expo-router';
+import * as SplashScreen from 'expo-splash-screen';
+import { StatusBar } from 'expo-status-bar';
+import React, { useEffect, useRef } from 'react';
+import { Animated, StyleSheet, View } from 'react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+
+import { Text } from '@/components/ui';
+import { configureNotifications, subscribeToNotificationResponses } from '@/services/notifications';
+import { useStore } from '@/store/useStore';
+import { ThemeProvider, useTheme } from '@/theme/ThemeProvider';
+
+void SplashScreen.preventAutoHideAsync().catch(() => undefined);
+
+export default function RootLayout() {
+  const status = useStore((state) => state.status);
+  const bootstrap = useStore((state) => state.bootstrap);
+  const refresh = useStore((state) => state.refresh);
+  const lastOutcome = useStore((state) => state.lastOutcome);
+  const setLastOutcome = useStore((state) => state.setLastOutcome);
+
+  useEffect(() => {
+    void configureNotifications();
+    void bootstrap();
+  }, [bootstrap]);
+
+  // Actionable notification taps mutate data outside React; refresh on return.
+  useEffect(() => {
+    return subscribeToNotificationResponses((outcome) => {
+      setLastOutcome(outcome.message);
+      void refresh();
+    });
+  }, [refresh, setLastOutcome]);
+
+  useEffect(() => {
+    if (status === 'ready' || status === 'error') {
+      void SplashScreen.hideAsync().catch(() => undefined);
+    }
+  }, [status]);
+
+  return (
+    <SafeAreaProvider>
+      <ThemeProvider>
+        <ThemedShell lastOutcome={lastOutcome} onOutcomeShown={() => setLastOutcome(null)} />
+      </ThemeProvider>
+    </SafeAreaProvider>
+  );
+}
+
+function ThemedShell({
+  lastOutcome,
+  onOutcomeShown,
+}: {
+  lastOutcome: string | null;
+  onOutcomeShown: () => void;
+}) {
+  const theme = useTheme();
+  const opacity = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (!lastOutcome) return;
+    Animated.sequence([
+      Animated.timing(opacity, { toValue: 1, duration: 180, useNativeDriver: true }),
+      Animated.delay(2200),
+      Animated.timing(opacity, { toValue: 0, duration: 220, useNativeDriver: true }),
+    ]).start(({ finished }) => {
+      if (finished) onOutcomeShown();
+    });
+  }, [lastOutcome, onOutcomeShown, opacity]);
+
+  return (
+    <>
+      <StatusBar style={theme.isDark ? 'light' : 'dark'} />
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          contentStyle: { backgroundColor: theme.colors.background },
+          animation: 'slide_from_right',
+        }}
+      >
+        <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="task/[id]" options={{ presentation: 'card' }} />
+        <Stack.Screen name="project/[id]" />
+        <Stack.Screen name="settings" options={{ presentation: 'modal' }} />
+      </Stack>
+
+      {lastOutcome ? (
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            styles.toast,
+            {
+              opacity,
+              backgroundColor: theme.colors.textPrimary,
+              borderRadius: theme.radii.pill,
+            },
+          ]}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Ionicons name="notifications-outline" size={15} color={theme.colors.textInverse} />
+            <Text variant="caption" color={theme.colors.textInverse}>
+              {lastOutcome}
+            </Text>
+          </View>
+        </Animated.View>
+      ) : null}
+    </>
+  );
+}
+
+const styles = StyleSheet.create({
+  toast: {
+    position: 'absolute',
+    bottom: 104,
+    alignSelf: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 18,
+  },
+});
