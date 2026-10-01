@@ -7,37 +7,44 @@ Three ways to get the app running on a device, easiest first.
 
 ## Option A — Install the APK (recommended)
 
-### Step 1 · Build the APK on GitHub (~15–20 min, one click)
+### Step 1 · Download it (one tap, no build needed)
+
+On your phone, open this link — it never changes and always serves the APK
+from the newest release:
+
+**<https://github.com/Parth-191006/To-do/releases/latest/download/TaskFlow-latest.apk>**
+
+Every release keeps a plain `TaskFlow-<version>.apk` (plus this permanent-name
+`TaskFlow-latest.apk` copy) that works on any phone, and smaller per-CPU
+variants at about half the size — see
+[Which APK to download?](#which-apk-to-download).
+
+No release exists yet? Build one yourself — see
+[Step 1b](#step-1b--build-the-apk-on-github-only-if-no-release-exists).
+
+### Step 2 · Install it
+
+1. Tap the downloaded file in **Files → Downloads** (or the notification).
+2. Android will warn: *"For your security, your phone is not allowed to install
+   unknown apps from this source."* Tap **Settings** → enable
+   **Allow from this source** → back → **Install**.
+   (This appears because the app is not from the Play Store — it is the normal
+   sideloading prompt, and it is safe here because the APK is built by this
+   repository's own CI.)
+3. Open **TaskFlow**. Grant the notification permission when asked.
+
+### Step 1b · Build the APK on GitHub (only if no release exists)
 
 1. Open **https://github.com/Parth-191006/To-do/actions**
 2. In the left sidebar, select **Android APK**
 3. Click **Run workflow →** (keep branch as `main`) → **Run workflow**
 4. Wait ~15–20 min. Click the running build to watch the live log.
-5. When it finishes, open the run and download the artifact
-   **TaskFlow-apk-\<number\>** from the Artifacts section.
-6. Unzip it — inside is the installable APK.
+5. When it finishes, download the **TaskFlow-apk-\<number\>** artifact from
+   the run's Artifacts section and unzip it — inside are the installable APKs.
+   (Tagging a `v*` commit instead attaches them to a Release automatically.)
 
-### Step 2 · Put it on your phone
-
-Any of these works:
-
-- **Download straight on the phone**: open this repo in your mobile browser,
-  tap **Go to file → `docs/INSTALL.md`** is not needed — instead open the
-  Actions run page in your phone's browser and download the artifact there
-  (GitHub's mobile site supports artifact download).
-- **Send it to yourself**: email the APK to yourself, or use Google Drive /
-  Telegram / WhatsApp "message to self" — then open it on the phone.
-- **USB**: copy the APK from your PC to the phone's Downloads folder.
-
-### Step 3 · Install it
-
-1. On the phone, tap the APK in **Files → Downloads** (or the notification).
-2. Android will warn: *"For your security, your phone is not allowed to install
-   unknown apps from this source."* Tap **Settings** → enable
-   **Allow from this source** → back → **Install**.
-   (This appears because the app is not from the Play Store — it is the normal
-   sideloading prompt, and it is safe here because you built this APK yourself.)
-3. Open **TaskFlow**. Grant the notification permission when asked.
+Transfer the APK to the phone any way you like — email it to yourself, use
+Google Drive / Telegram / WhatsApp "message to self", or copy it over USB.
 
 ### Updating later
 
@@ -116,18 +123,10 @@ Store, sharing with others):
    | `KEY_ALIAS` | `taskflow` |
    | `KEY_PASSWORD` | the key password you chose |
 
-3. Extend `.github/workflows/android-apk.yml`: replace the "Align and sign"
-   step's `keytool` generation with a decode step:
-
-   ```yaml
-   - name: Restore keystore
-     run: echo "$KEYSTORE_BASE64" | base64 -d > taskflow-release.keystore
-     env:
-       KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
-   ```
-
-   and pass `--ks-pass pass:$KEYSTORE_PASSWORD --ks-key-alias $KEY_ALIAS`
-   from secrets. Same workflow, but now every APK shares one identity and can
+3. That's it — the workflow already prefers these secrets when present (the
+   keystore job decodes `KEYSTORE_BASE64` instead of minting a key, and the
+   sign step reads the passwords/alias from secrets with `taskflow-ci` /
+   `taskflow` only as fallbacks). Every APK now shares your identity and can
    update the previous install in place.
 
 ---

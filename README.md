@@ -7,9 +7,20 @@ analytics.
 
 **Every feature is unlocked. There is no paywall, no tiers, no feature gating.**
 
-Releases ship one slim APK per CPU architecture (arm64-v8a fits most phones,
-about half the size of the universal APK) plus a universal fallback — see
-[docs/INSTALL.md](docs/INSTALL.md#which-apk-to-download).
+## Download
+
+Install it on your phone in one tap — no computer, no build tools. This link
+never changes and always serves the newest release:
+
+**→ [Download TaskFlow-latest.apk](https://github.com/Parth-191006/To-do/releases/latest/download/TaskFlow-latest.apk)**
+
+(the release page itself: <https://github.com/Parth-191006/To-do/releases/latest>)
+
+The release also ships smaller per-CPU APKs — `arm64-v8a` fits most phones
+since 2016 at about half the size of the universal one. Which-file guide:
+[docs/INSTALL.md](docs/INSTALL.md#which-apk-to-download). All variants share
+one signature, so updates install straight over older versions and keep your
+data.
 
 ---
 

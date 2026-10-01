@@ -264,6 +264,11 @@ jobs:
           "$BT/apksigner" verify --print-certs "$NAME.apk" | head -4
           ls -lh TaskFlow-*.apk
 
+          # Fixed-name copy of the universal APK: the releases/latest/download
+          # permalink needs an asset name that survives version bumps, so a
+          # phone can always fetch the newest build from the same URL.
+          cp -f "$NAME.apk" TaskFlow-latest.apk
+
           # Size table on the run's Summary page, so nobody has to download
           # five files to learn which one they want.
           {
@@ -273,6 +278,7 @@ jobs:
             echo '| --- | --- | --- |'
             for f in TaskFlow-*.apk; do
               case "$f" in
+                TaskFlow-latest.apk) AUD="same universal build under a permanent name" ;;
                 *arm64-v8a*)   AUD="most phones since ~2016 — pick this one" ;;
                 *armeabi-v7a*) AUD="older or low-end phones" ;;
                 *x86_64*)      AUD="Chromebooks and emulators" ;;
@@ -298,3 +304,26 @@ jobs:
           name: TaskFlow ${{ github.ref_name }}
           files: TaskFlow-*.apk
           generate_release_notes: true
+          # The body leads with a plain-language guide to the five APKs so the
+          # "keep a proper apk easily downloadable" ask is met on every future
+          # release without touching docs.
+          body: |
+            ## Download
+
+            **→ [TaskFlow-latest.apk](https://github.com/${{ github.repository }}/releases/latest/download/TaskFlow-latest.apk) — works on any phone.**
+
+            That permanent link always serves the newest release. Smaller
+            per-CPU builds (about half the size) are attached below as
+            `TaskFlow-${{ github.ref_name }}-<cpu>.apk`.
+
+            | File | Size | For |
+            | --- | --- | --- |
+            | `TaskFlow-latest.apk` | ~118 MB | any phone — permanent-name copy of the universal build |
+            | `TaskFlow-${{ github.ref_name }}.apk` | ~118 MB | same build, version-named |
+            | `TaskFlow-${{ github.ref_name }}-arm64-v8a.apk` | ~52 MB | most phones since 2016 |
+            | `TaskFlow-${{ github.ref_name }}-armeabi-v7a.apk` | ~45 MB | older / low-end phones |
+            | `TaskFlow-${{ github.ref_name }}-x86_64.apk` | ~52 MB | Chromebooks, emulators |
+
+            All files are signed with the same key — a newer version installs
+            straight over an older one and keeps your data. Full guide:
+            [INSTALL.md](https://github.com/${{ github.repository }}/blob/main/docs/INSTALL.md).
