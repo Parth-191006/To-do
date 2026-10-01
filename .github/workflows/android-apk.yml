@@ -2,8 +2,10 @@ name: Android APK
 
 # What this does
 # --------------
-#   - push a tag like v1.1.0  →  build + sign an APK and attach it to a GitHub
-#                                Release (easiest thing to download on a phone)
+#   - push a tag like v1.1.0  →  build + sign per-CPU APKs (~40 MB each) plus a
+#                                universal fallback, and attach them all to a
+#                                GitHub Release (easiest thing to download on a
+#                                phone)
 #   - run it manually          →  Actions tab → "Android APK" → Run workflow
 #   - push to main             →  only the cheap keystore job runs (seconds); it
 #                                refreshes the signing identity in the cache
@@ -188,6 +190,29 @@ jobs:
           } >> android/gradle.properties
           tail -8 android/gradle.properties
 
+      # One slim APK per CPU architecture instead of one fat file: a universal
+      # APK repeats every native library four times, which is why a download
+      # that is ~40 MB for any single device weighs 118 MB. `universalApk true`
+      # keeps the fat APK as the "works everywhere" fallback.
+      - name: Enable per-ABI APK splits
+        run: |
+          cat >> android/app/build.gradle <<'EOF'
+
+          // ABI splits (appended by android-apk.yml).
+          android {
+              splits {
+                  abi {
+                      enable true
+                      reset()
+                      include "armeabi-v7a", "arm64-v8a", "x86", "x86_64"
+                      universalApk true
+                  }
+              }
+          }
+          EOF
+          echo "--- splits config appended ---"
+          tail -14 android/app/build.gradle
+
       - name: Build release APK
         run: |
           chmod +x android/gradlew
@@ -199,7 +224,7 @@ jobs:
         with:
           name: signing-keystore
 
-      - name: Align and sign APK
+      - name: Align and sign every APK
         env:
           KS_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD != '' && secrets.KEYSTORE_PASSWORD || 'taskflow-ci' }}
           KS_ALIAS: ${{ secrets.KEY_ALIAS != '' && secrets.KEY_ALIAS || 'taskflow' }}
@@ -207,16 +232,57 @@ jobs:
         run: |
           set -euo pipefail
           BT="$(ls -d "$ANDROID_HOME/build-tools"/* | sort -V | tail -1)"
+          NAME="TaskFlow-${{ github.ref_name }}"
 
-          UNSIGNED=$(ls android/app/build/outputs/apk/release/*.apk | head -1)
-          echo "Unsigned APK: $UNSIGNED"
-          "$BT/zipalign" -f -p 4 "$UNSIGNED" aligned.apk
-          "$BT/apksigner" sign \
-            --ks taskflow-release.keystore --ks-key-alias "$KS_ALIAS" \
-            --ks-pass pass:"$KS_PASSWORD" --key-pass pass:"$KS_KEY_PASSWORD" \
-            --out "TaskFlow-${{ github.ref_name }}.apk" aligned.apk
-          "$BT/apksigner" verify --print-certs "TaskFlow-${{ github.ref_name }}.apk" | head -4
-          ls -lh "TaskFlow-${{ github.ref_name }}.apk"
+          echo "Unsigned outputs:"
+          ls -lh android/app/build/outputs/apk/release/
+
+          # The universal APK keeps the bare name (TaskFlow-<tag>.apk, so it
+          # replaces the pre-split asset on the release); every ABI split gets
+          # the architecture appended. All variants share one versionCode and
+          # one signature, so switching between them never needs an uninstall.
+          for APK in android/app/build/outputs/apk/release/*release.apk; do
+            [ -e "$APK" ] || continue
+            BASE="$(basename "$APK")"
+            case "$BASE" in
+              app-arm64-v8a-*)   SUFFIX="-arm64-v8a" ;;
+              app-armeabi-v7a-*) SUFFIX="-armeabi-v7a" ;;
+              app-x86_64-*)      SUFFIX="-x86_64" ;;
+              app-x86-*)         SUFFIX="-x86" ;;
+              *)                 SUFFIX="" ;;
+            esac
+            "$BT/zipalign" -f -p 4 "$APK" "aligned$SUFFIX.apk"
+            "$BT/apksigner" sign \
+              --ks taskflow-release.keystore --ks-key-alias "$KS_ALIAS" \
+              --ks-pass pass:"$KS_PASSWORD" --key-pass pass:"$KS_KEY_PASSWORD" \
+              --out "$NAME$SUFFIX.apk" "aligned$SUFFIX.apk"
+            "$BT/apksigner" verify "$NAME$SUFFIX.apk"
+            rm -f "aligned$SUFFIX.apk"
+            echo "Signed $NAME$SUFFIX.apk"
+          done
+
+          "$BT/apksigner" verify --print-certs "$NAME.apk" | head -4
+          ls -lh TaskFlow-*.apk
+
+          # Size table on the run's Summary page, so nobody has to download
+          # five files to learn which one they want.
+          {
+            echo '### APK sizes'
+            echo ''
+            echo '| APK | Size | Best for |'
+            echo '| --- | --- | --- |'
+            for f in TaskFlow-*.apk; do
+              case "$f" in
+                *arm64-v8a*)   AUD="most phones since ~2016 — pick this one" ;;
+                *armeabi-v7a*) AUD="older or low-end phones" ;;
+                *x86_64*)      AUD="Chromebooks and emulators" ;;
+                *-x86.apk)     AUD="rare 32-bit x86 devices" ;;
+                *)             AUD="any device, if unsure" ;;
+              esac
+              SIZE="$(du -h "$f" | cut -f1)"
+              echo "| \`$f\` | $SIZE | $AUD |"
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload artifact (every build)
         uses: actions/upload-artifact@v4

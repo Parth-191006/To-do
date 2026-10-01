@@ -7,6 +7,10 @@ analytics.
 
 **Every feature is unlocked. There is no paywall, no tiers, no feature gating.**
 
+Releases ship one ~40 MB APK per CPU architecture (arm64-v8a fits most phones)
+plus a universal fallback — see
+[docs/INSTALL.md](docs/INSTALL.md#which-apk-to-download).
+
 ---
 
 ## Quick start
