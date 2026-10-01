@@ -2,10 +2,10 @@ name: Android APK
 
 # What this does
 # --------------
-#   - push a tag like v1.1.0  →  build + sign per-CPU APKs (~40 MB each) plus a
-#                                universal fallback, and attach them all to a
-#                                GitHub Release (easiest thing to download on a
-#                                phone)
+#   - push a tag like v1.1.0  →  build + sign per-CPU APKs (~45–55 MB each)
+#                                plus a universal fallback, and attach them all
+#                                to a GitHub Release (easiest thing to download
+#                                on a phone)
 #   - run it manually          →  Actions tab → "Android APK" → Run workflow
 #   - push to main             →  only the cheap keystore job runs (seconds); it
 #                                refreshes the signing identity in the cache

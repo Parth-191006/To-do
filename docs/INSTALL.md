@@ -145,15 +145,15 @@ notes — a tidy permanent download link you can share.
 
 ### Which APK to download?
 
-Every release ships one slim APK per CPU architecture plus a universal
-fallback (all signed with the same key, so you can switch between them without
-uninstalling):
+Every release ships one slim APK per CPU architecture (roughly half the
+universal APK's size) plus a universal fallback (all signed with the same key,
+so you can switch between them without uninstalling):
 
 | File | Size | Best for |
 | --- | --- | --- |
-| `TaskFlow-<tag>-arm64-v8a.apk` | smallest, ~40 MB | **most phones since ~2016 — pick this one** |
-| `TaskFlow-<tag>-armeabi-v7a.apk` | ~40 MB | older or low-end phones |
-| `TaskFlow-<tag>-x86_64.apk` | ~40 MB | Chromebooks and emulators |
+| `TaskFlow-<tag>-arm64-v8a.apk` | ~52 MB | **most phones since ~2016 — pick this one** |
+| `TaskFlow-<tag>-armeabi-v7a.apk` | ~45 MB | older or low-end phones |
+| `TaskFlow-<tag>-x86_64.apk` | ~52 MB | Chromebooks and emulators |
 | `TaskFlow-<tag>.apk` | ~118 MB | any device, if unsure |
 
 Not sure which CPU your phone has? Install the universal APK, or just try the
