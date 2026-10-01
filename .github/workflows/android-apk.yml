@@ -2,10 +2,10 @@ name: Android APK
 
 # What this does
 # --------------
-#   - push a tag like v1.1.0  →  build + sign per-CPU APKs (~45–55 MB each)
-#                                plus a universal fallback, and attach them all
-#                                to a GitHub Release (easiest thing to download
-#                                on a phone)
+#   - push a tag like v1.1.0  →  build + sign one arm64-v8a APK (~50 MB, every
+#                                phone made since ~2016) and attach it — plus a
+#                                permanent-name copy — to a GitHub Release (the
+#                                easiest thing to download on a phone)
 #   - run it manually          →  Actions tab → "Android APK" → Run workflow
 #   - push to main             →  only the cheap keystore job runs (seconds); it
 #                                refreshes the signing identity in the cache
@@ -190,22 +190,24 @@ jobs:
           } >> android/gradle.properties
           tail -8 android/gradle.properties
 
-      # One slim APK per CPU architecture instead of one fat file: a universal
-      # APK repeats every native library four times, which is why a download
-      # that is ~40 MB for any single device weighs 118 MB. `universalApk true`
-      # keeps the fat APK as the "works everywhere" fallback.
-      - name: Enable per-ABI APK splits
+      # Ship one slim APK for modern hardware instead of a fat universal file.
+      # A universal APK repeats every native library for four CPU architectures
+      # (including the x86/x86_64 and 32-bit ARM variants that no current phone
+      # uses), which is why the download ballooned to ~118 MB. Restricting the
+      # build to arm64-v8a — the ABI of every Android device sold for years —
+      # gives a single ~50 MB APK with no fallback variants to choose between.
+      - name: Restrict the build to arm64-v8a
         run: |
           cat >> android/app/build.gradle <<'EOF'
 
-          // ABI splits (appended by android-apk.yml).
+          // ABI split (appended by android-apk.yml): arm64-v8a only.
           android {
               splits {
                   abi {
                       enable true
                       reset()
-                      include "armeabi-v7a", "arm64-v8a", "x86", "x86_64"
-                      universalApk true
+                      include "arm64-v8a"
+                      universalApk false
                   }
               }
           }
@@ -237,18 +239,14 @@ jobs:
           echo "Unsigned outputs:"
           ls -lh android/app/build/outputs/apk/release/
 
-          # The universal APK keeps the bare name (TaskFlow-<tag>.apk, so it
-          # replaces the pre-split asset on the release); every ABI split gets
-          # the architecture appended. All variants share one versionCode and
-          # one signature, so switching between them never needs an uninstall.
+          # A single arm64-v8a APK is produced; the architecture is appended
+          # for clarity. It shares one versionCode and one signature with every
+          # earlier release, so a newer build installs over the old one.
           for APK in android/app/build/outputs/apk/release/*release.apk; do
             [ -e "$APK" ] || continue
             BASE="$(basename "$APK")"
             case "$BASE" in
               app-arm64-v8a-*)   SUFFIX="-arm64-v8a" ;;
-              app-armeabi-v7a-*) SUFFIX="-armeabi-v7a" ;;
-              app-x86_64-*)      SUFFIX="-x86_64" ;;
-              app-x86-*)         SUFFIX="-x86" ;;
               *)                 SUFFIX="" ;;
             esac
             "$BT/zipalign" -f -p 4 "$APK" "aligned$SUFFIX.apk"
@@ -261,16 +259,15 @@ jobs:
             echo "Signed $NAME$SUFFIX.apk"
           done
 
-          "$BT/apksigner" verify --print-certs "$NAME.apk" | head -4
+          "$BT/apksigner" verify --print-certs "$NAME-arm64-v8a.apk" | head -4
           ls -lh TaskFlow-*.apk
 
-          # Fixed-name copy of the universal APK: the releases/latest/download
+          # Fixed-name copy of the arm64-v8a APK: the releases/latest/download
           # permalink needs an asset name that survives version bumps, so a
           # phone can always fetch the newest build from the same URL.
-          cp -f "$NAME.apk" TaskFlow-latest.apk
+          cp -f "$NAME-arm64-v8a.apk" TaskFlow-latest.apk
 
-          # Size table on the run's Summary page, so nobody has to download
-          # five files to learn which one they want.
+          # Size table on the run's Summary page.
           {
             echo '### APK sizes'
             echo ''
@@ -278,12 +275,8 @@ jobs:
             echo '| --- | --- | --- |'
             for f in TaskFlow-*.apk; do
               case "$f" in
-                TaskFlow-latest.apk) AUD="same universal build under a permanent name" ;;
-                *arm64-v8a*)   AUD="most phones since ~2016 — pick this one" ;;
-                *armeabi-v7a*) AUD="older or low-end phones" ;;
-                *x86_64*)      AUD="Chromebooks and emulators" ;;
-                *-x86.apk)     AUD="rare 32-bit x86 devices" ;;
-                *)             AUD="any device, if unsure" ;;
+                TaskFlow-latest.apk) AUD="same arm64-v8a build under a permanent name" ;;
+                *)                   AUD="every phone made since ~2016" ;;
               esac
               SIZE="$(du -h "$f" | cut -f1)"
               echo "| \`$f\` | $SIZE | $AUD |"
@@ -304,26 +297,25 @@ jobs:
           name: TaskFlow ${{ github.ref_name }}
           files: TaskFlow-*.apk
           generate_release_notes: true
-          # The body leads with a plain-language guide to the five APKs so the
-          # "keep a proper apk easily downloadable" ask is met on every future
-          # release without touching docs.
+          # The body leads with the one download that matters, so the "keep a
+          # proper apk easily downloadable" ask is met on every future release
+          # without touching docs.
           body: |
             ## Download
 
-            **→ [TaskFlow-latest.apk](https://github.com/${{ github.repository }}/releases/latest/download/TaskFlow-latest.apk) — works on any phone.**
+            **→ [TaskFlow-latest.apk](https://github.com/${{ github.repository }}/releases/latest/download/TaskFlow-latest.apk) — works on every phone made since ~2016.**
 
-            That permanent link always serves the newest release. Smaller
-            per-CPU builds (about half the size) are attached below as
-            `TaskFlow-${{ github.ref_name }}-<cpu>.apk`.
+            That permanent link always serves the newest release. This release
+            ships a single **arm64-v8a** build (about 50 MB) — the CPU
+            architecture used by essentially every Android phone sold for
+            years. There is no universal or per-architecture menu to choose
+            from.
 
             | File | Size | For |
             | --- | --- | --- |
-            | `TaskFlow-latest.apk` | ~118 MB | any phone — permanent-name copy of the universal build |
-            | `TaskFlow-${{ github.ref_name }}.apk` | ~118 MB | same build, version-named |
-            | `TaskFlow-${{ github.ref_name }}-arm64-v8a.apk` | ~52 MB | most phones since 2016 |
-            | `TaskFlow-${{ github.ref_name }}-armeabi-v7a.apk` | ~45 MB | older / low-end phones |
-            | `TaskFlow-${{ github.ref_name }}-x86_64.apk` | ~52 MB | Chromebooks, emulators |
+            | `TaskFlow-latest.apk` | ~50 MB | permanent-name copy — use this link |
+            | `TaskFlow-${{ github.ref_name }}-arm64-v8a.apk` | ~50 MB | same build, version-named |
 
-            All files are signed with the same key — a newer version installs
-            straight over an older one and keeps your data. Full guide:
+            Signed with the same key as previous releases, so a newer version
+            installs straight over an older one and keeps your data. Full guide:
             [INSTALL.md](https://github.com/${{ github.repository }}/blob/main/docs/INSTALL.md).

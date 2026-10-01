@@ -16,11 +16,11 @@ never changes and always serves the newest release:
 
 (the release page itself: <https://github.com/Parth-191006/To-do/releases/latest>)
 
-The release also ships smaller per-CPU APKs — `arm64-v8a` fits most phones
-since 2016 at about half the size of the universal one. Which-file guide:
-[docs/INSTALL.md](docs/INSTALL.md#which-apk-to-download). All variants share
-one signature, so updates install straight over older versions and keep your
-data.
+This release ships a single **arm64-v8a** build (about 50 MB) — the CPU
+architecture used by every Android phone made since ~2016, with no universal or
+per-architecture menu to choose from. It is signed with the same key as earlier
+releases, so updates install straight over older versions and keep your data.
+More detail: [docs/INSTALL.md](docs/INSTALL.md#which-apk-to-download).
 
 ---
 

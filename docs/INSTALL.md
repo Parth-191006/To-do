@@ -144,17 +144,14 @@ notes — a tidy permanent download link you can share.
 
 ### Which APK to download?
 
-Every release ships one slim APK per CPU architecture (roughly half the
-universal APK's size) plus a universal fallback (all signed with the same key,
-so you can switch between them without uninstalling):
+Every release ships a **single arm64-v8a APK** — the CPU architecture used by
+essentially every Android phone made since ~2016. There is no per-architecture
+or universal menu to reason about:
 
 | File | Size | Best for |
 | --- | --- | --- |
-| `TaskFlow-<tag>-arm64-v8a.apk` | ~52 MB | **most phones since ~2016 — pick this one** |
-| `TaskFlow-<tag>-armeabi-v7a.apk` | ~45 MB | older or low-end phones |
-| `TaskFlow-<tag>-x86_64.apk` | ~52 MB | Chromebooks and emulators |
-| `TaskFlow-<tag>.apk` | ~118 MB | any device, if unsure |
+| `TaskFlow-latest.apk` | ~50 MB | **every current phone — the permanent link is the easiest choice** |
+| `TaskFlow-<tag>-arm64-v8a.apk` | ~50 MB | the same build, version-named |
 
-Not sure which CPU your phone has? Install the universal APK, or just try the
-`arm64-v8a` one — it refuses to install only if your phone genuinely is not a
-64-bit ARM device, and then the universal APK still works.
+Both files are identical and signed with the same key as earlier releases, so a
+newer version installs straight over an older one and keeps your data.
