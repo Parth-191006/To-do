@@ -4,14 +4,16 @@
   "main": "expo-router/entry",
   "dependencies": {
     "@expo/vector-icons": "^15.1.1",
-    "@react-native-async-storage/async-storage": "^3.1.1",
+    "@react-native-async-storage/async-storage": "2.2.0",
     "@supabase/supabase-js": "^2.117.2",
     "date-fns": "^4.4.0",
     "expo": "~57.0.26",
+    "expo-asset": "~57.0.18",
     "expo-audio": "~57.0.5",
     "expo-blur": "~57.0.3",
     "expo-constants": "~57.0.20",
     "expo-device": "~57.0.2",
+    "expo-font": "~57.0.4",
     "expo-haptics": "~57.0.3",
     "expo-image-picker": "~57.0.20",
     "expo-linear-gradient": "~57.0.2",
@@ -50,7 +52,8 @@
     "verify:nlp": "node --experimental-strip-types scripts/verify-nlp.ts",
     "verify:clock": "node --experimental-strip-types scripts/verify-focus-clock.ts",
     "verify:habits": "node --experimental-strip-types scripts/verify-habits.ts",
-    "verify": "npm run typecheck && npm run verify:nlp && npm run verify:clock && npm run verify:habits"
+    "verify:schema": "node --experimental-strip-types --experimental-sqlite scripts/verify-schema.ts",
+    "verify": "npm run typecheck && npm run verify:nlp && npm run verify:clock && npm run verify:habits && npm run verify:schema"
   },
   "private": true
 }

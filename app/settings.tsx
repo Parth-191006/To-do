@@ -55,9 +55,16 @@ export default function SettingsScreen() {
     [tasks],
   );
 
+  // Defensive: this feeds the only place the notification controls live, so a
+  // failing permission or database probe must never take the section down with
+  // it — we just fall back to the neutral state and keep the options visible.
   const refreshStatus = useCallback(async () => {
-    setPermission(await getPermissionStatus());
-    setPending(await pendingChangeCount());
+    const [nextPermission, nextPending] = await Promise.all([
+      getPermissionStatus().catch(() => 'undetermined' as const),
+      pendingChangeCount().catch(() => 0),
+    ]);
+    setPermission(nextPermission);
+    setPending(nextPending);
   }, []);
 
   useEffect(() => {
@@ -75,18 +82,26 @@ export default function SettingsScreen() {
       setNotice('Turn on notifications for TaskFlow, then come back and re-arm your reminders.');
       return;
     }
-    const granted = await ensureNotificationPermissions();
-    if (granted) {
-      await scheduleDailyDigest({ hour: 8, minute: 30 });
-      setNotice('Notifications enabled — your daily 8:30am digest is armed.');
-    } else {
-      setNotice('Notification permission was not granted.');
+    let granted = false;
+    try {
+      granted = await ensureNotificationPermissions();
+      if (granted) {
+        await scheduleDailyDigest({ hour: 8, minute: 30 }).catch(() => undefined);
+        setNotice('Notifications enabled — your daily 8:30am digest is armed.');
+      } else {
+        setNotice('Notification permission was not granted — allow it in system settings.');
+      }
+    } catch {
+      setNotice('Could not set up notifications on this device.');
     }
     await refreshStatus();
   }, [permission, refreshStatus]);
 
   const handleTestNotification = useCallback(async () => {
-    const result = await sendTestNotification();
+    const result = await sendTestNotification().catch(() => ({
+      ok: false,
+      reason: 'Could not send a test notification on this device.',
+    }));
     setNotice(
       result.ok
         ? 'Sending… you should see the banner in about 4 seconds. Lock the screen to be sure.'

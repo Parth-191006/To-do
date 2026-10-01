@@ -3,23 +3,29 @@
     "name": "TaskFlow",
     "slug": "taskflow",
     "scheme": "taskflow",
-    "version": "1.1.0",
+    "version": "1.1.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.taskflow.app",
       "infoPlist": {
-        "UIBackgroundModes": ["location", "fetch", "remote-notification"],
+        "UIBackgroundModes": [
+          "location",
+          "fetch",
+          "remote-notification"
+        ],
         "NSMicrophoneUsageDescription": "TaskFlow uses the microphone for quick voice-to-task capture.",
         "NSLocationWhenInUseUsageDescription": "TaskFlow reminds you about tasks when you arrive at a place."
       }
     },
     "android": {
       "package": "com.taskflow.app",
+      "versionCode": 2,
       "adaptiveIcon": {
         "backgroundColor": "#0B0B12",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -68,7 +74,9 @@
         {
           "photosPermission": "TaskFlow attaches photos to your tasks."
         }
-      ]
+      ],
+      "expo-font",
+      "expo-asset"
     ],
     "experiments": {
       "typedRoutes": false

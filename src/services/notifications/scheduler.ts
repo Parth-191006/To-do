@@ -18,6 +18,7 @@ import {
   CATEGORY_HABIT,
   CATEGORY_TASK,
   configureNotificationChannels,
+  registerNotificationCategories,
 } from './categories';
 
 /**
@@ -52,7 +53,12 @@ const MINUTE = 60_000;
  * closes.
  */
 async function readyChannels(): Promise<void> {
+  // Channels must exist or Android silently drops the post; categories must
+  // exist or the banner arrives with no action buttons ("options"). Both are
+  // cheap and idempotent, so we re-assert them right before every schedule
+  // rather than trusting that the cold-start boot sequence finished first.
   await configureNotificationChannels().catch(() => undefined);
+  await registerNotificationCategories().catch(() => undefined);
 }
 
 export interface ScheduleResult {

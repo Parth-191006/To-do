@@ -18,10 +18,10 @@
 
 export const SCHEMA_VERSION = 1;
 
+// NOTE: connection-wide pragmas (journal_mode, foreign_keys) are applied in
+// `getDatabase` BEFORE this SQL runs, never here. Migrations execute inside a
+// transaction, and SQLite rejects `PRAGMA journal_mode = WAL` inside one.
 export const MIGRATION_001 = `
-PRAGMA journal_mode = WAL;
-PRAGMA foreign_keys = ON;
-
 CREATE TABLE IF NOT EXISTS users (
   id           TEXT PRIMARY KEY,
   email        TEXT,

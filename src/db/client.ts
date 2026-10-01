@@ -30,6 +30,12 @@ export function getDatabase(): Promise<SQLite.SQLiteDatabase> {
   if (!databasePromise) {
     databasePromise = (async () => {
       const db = await SQLite.openDatabaseAsync(DB_NAME);
+      // Connection-wide pragmas belong OUTSIDE a transaction: SQLite refuses to
+      // switch journal modes while one is open ("cannot change into wal mode
+      // from within a transaction"). Running `PRAGMA journal_mode = WAL` inside
+      // the migration transaction is exactly what made every fresh install fail
+      // to open the database and land on a "Runtime Error" screen at launch.
+      await db.execAsync('PRAGMA journal_mode = WAL;');
       await db.execAsync('PRAGMA foreign_keys = ON;');
       await runMigrations(db);
       await seedDefaults(db);
