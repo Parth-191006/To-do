@@ -3,7 +3,7 @@
     "name": "TaskFlow",
     "slug": "taskflow",
     "scheme": "taskflow",
-    "version": "1.1.1",
+    "version": "1.2.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -25,9 +25,9 @@
     },
     "android": {
       "package": "com.taskflow.app",
-      "versionCode": 2,
+      "versionCode": 3,
       "adaptiveIcon": {
-        "backgroundColor": "#0B0B12",
+        "backgroundColor": "#093733",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
@@ -60,7 +60,7 @@
         "expo-notifications",
         {
           "icon": "./assets/icon.png",
-          "color": "#6C5CE7"
+          "color": "#0D9488"
         }
       ],
       [
@@ -73,6 +73,15 @@
         "expo-image-picker",
         {
           "photosPermission": "TaskFlow attaches photos to your tasks."
+        }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 180,
+          "resizeMode": "contain",
+          "backgroundColor": "#050B0B"
         }
       ],
       "expo-font",

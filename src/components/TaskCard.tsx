@@ -13,7 +13,7 @@ import type { Priority, TaskWithTags } from '@/domain/types';
 import { describeRecurrence } from '@/nlp/parser';
 import { subtaskProgress } from '@/store/selectors';
 import { useTheme } from '@/theme/ThemeProvider';
-import { success, tapLight } from '@/utils/haptics';
+import { success } from '@/utils/haptics';
 import { clamp } from '@/utils/id';
 
 import { Confetti, type ConfettiHandle } from './Confetti';
@@ -128,13 +128,19 @@ export function TaskCard({
       {/* Swipe action backdrops */}
       <Animated.View
         pointerEvents="none"
-        style={[styles.backdrop, { opacity: completeOpacity, justifyContent: 'flex-start' }]}
+        style={[
+          styles.backdrop,
+          { opacity: completeOpacity, justifyContent: 'flex-start', borderRadius: theme.radii.xl },
+        ]}
       >
         <Ionicons name="checkmark-circle" size={22} color={theme.colors.success} />
       </Animated.View>
       <Animated.View
         pointerEvents="none"
-        style={[styles.backdrop, { opacity: deleteOpacity, justifyContent: 'flex-end' }]}
+        style={[
+          styles.backdrop,
+          { opacity: deleteOpacity, justifyContent: 'flex-end', borderRadius: theme.radii.xl },
+        ]}
       >
         <Ionicons name="trash" size={20} color={theme.colors.danger} />
       </Animated.View>
@@ -293,7 +299,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 18,
-    borderRadius: 16,
+    // Radius is applied inline so the backdrop follows theme.radii.xl like the card.
     backgroundColor: 'transparent',
   },
 });

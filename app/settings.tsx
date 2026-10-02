@@ -2,9 +2,10 @@ import { Ionicons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Linking, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { BrandMark } from '@/components/BrandMark';
 import { Divider, Chip, Text } from '@/components/ui';
 import { resetDatabase } from '@/db/client';
 import {
@@ -15,7 +16,13 @@ import {
   scheduleTaskNotifications,
   sendTestNotification,
 } from '@/services/notifications';
-import { isSupabaseConfigured } from '@/services/supabase/client';
+import {
+  getSessionEmail,
+  isSupabaseConfigured,
+  signInWithOtp,
+  signOut,
+  subscribeToAuthChanges,
+} from '@/services/supabase/client';
 import { pendingChangeCount, runSync } from '@/services/sync/engine';
 import { useStore } from '@/store/useStore';
 import { useTheme, useThemePreference } from '@/theme/ThemeProvider';
@@ -44,6 +51,10 @@ export default function SettingsScreen() {
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  const [sessionEmail, setSessionEmail] = useState<string | null>(null);
+  const [signInEmail, setSignInEmail] = useState('');
+  const [linkSent, setLinkSent] = useState(false);
+
   /** Tasks that still have a future reminder or due time waiting on the OS. */
   const armed = useMemo(
     () =>
@@ -70,6 +81,37 @@ export default function SettingsScreen() {
   useEffect(() => {
     void refreshStatus();
   }, [refreshStatus]);
+
+  // Sync sign-in state. "Sync now" used to dead-end at "Not signed in" with
+  // no way to sign in — this is the missing half of that flow.
+  useEffect(() => {
+    void getSessionEmail().then(setSessionEmail).catch(() => null);
+    return subscribeToAuthChanges(() => {
+      void getSessionEmail().then(setSessionEmail).catch(() => null);
+    });
+  }, []);
+
+  const handleSendSignInLink = useCallback(async () => {
+    const email = signInEmail.trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setSyncMessage('Enter a valid email address.');
+      return;
+    }
+    const { error } = await signInWithOtp(email);
+    if (error) {
+      setSyncMessage(`Could not send the sign-in link — ${error}`);
+      return;
+    }
+    setLinkSent(true);
+    setSyncMessage('Sign-in link sent — open it on this device to sign in.');
+  }, [signInEmail]);
+
+  const handleSignOut = useCallback(async () => {
+    await signOut().catch(() => undefined);
+    setSessionEmail(null);
+    setLinkSent(false);
+    setSyncMessage('Signed out on this device.');
+  }, []);
 
   /**
    * Asks only from a clean slate. Once Android has recorded a denial it will no
@@ -280,6 +322,48 @@ export default function SettingsScreen() {
           <View style={{ flexDirection: 'row', gap: theme.spacing.sm }}>
             <Chip label={busy ? 'Working…' : 'Sync now'} icon="refresh" onPress={() => void handleSync()} />
           </View>
+
+          {isSupabaseConfigured ? (
+            sessionEmail ? (
+              <>
+                <Row label="Signed in as" value={sessionEmail} />
+                <View style={{ flexDirection: 'row', gap: theme.spacing.sm }}>
+                  <Chip label="Sign out" icon="log-out-outline" onPress={() => void handleSignOut()} />
+                </View>
+              </>
+            ) : (
+              <View style={{ gap: theme.spacing.sm }}>
+                <TextInput
+                  value={signInEmail}
+                  onChangeText={setSignInEmail}
+                  placeholder="you@example.com"
+                  placeholderTextColor={theme.colors.textTertiary}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  submitBehavior="submit"
+                  onSubmitEditing={() => void handleSendSignInLink()}
+                  style={[
+                    theme.typography.body,
+                    {
+                      color: theme.colors.textPrimary,
+                      backgroundColor: theme.colors.surfaceSunken,
+                      borderRadius: theme.radii.md,
+                      paddingHorizontal: theme.spacing.md,
+                      paddingVertical: 10,
+                    },
+                  ]}
+                />
+                <View style={{ flexDirection: 'row', gap: theme.spacing.sm }}>
+                  <Chip
+                    label={linkSent ? 'Link sent — check your inbox' : 'Send sign-in link'}
+                    icon="mail-outline"
+                    onPress={() => void handleSendSignInLink()}
+                  />
+                </View>
+              </View>
+            )
+          ) : null}
           {!isSupabaseConfigured ? (
             <Text variant="micro" color={theme.colors.textTertiary}>
               SET EXPO_PUBLIC_SUPABASE_URL AND EXPO_PUBLIC_SUPABASE_ANON_KEY TO ENABLE CLOUD SYNC AND SHARED
@@ -300,6 +384,15 @@ export default function SettingsScreen() {
         </Section>
 
         <Section title="TaskFlow" icon="information-circle-outline">
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.md }}>
+            <BrandMark size={52} />
+            <View style={{ flex: 1 }}>
+              <Text variant="heading">TaskFlow</Text>
+              <Text variant="caption" color={theme.colors.textSecondary}>
+                Capture, focus, finish.
+              </Text>
+            </View>
+          </View>
           <Text variant="caption" color={theme.colors.textSecondary}>
             Every feature ships unlocked: unlimited projects and subtasks, AI breakdown, location reminders,
             actionable snooze, focus timer, habit analytics and themes. No paywall, no tiers.

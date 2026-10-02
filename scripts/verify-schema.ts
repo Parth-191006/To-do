@@ -106,7 +106,7 @@ try {
              (id, name, color, icon, is_archived, position, created_at, updated_at, sync_state)
            VALUES (?, ?, ?, ?, 0, 0, ?, ?, 'pending')`,
         )
-        .run('local-inbox', 'Inbox', '#6C5CE7', 'inbox', now, now);
+        .run('local-inbox', 'Inbox', '#0D9488', 'inbox', now, now);
     insert();
     insert();
     const count = db.prepare('SELECT COUNT(*) AS n FROM projects;').get() as { n: number };

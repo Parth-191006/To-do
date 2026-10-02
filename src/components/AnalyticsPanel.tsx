@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { addDays, format, startOfDay, subDays } from 'date-fns';
-import React, { useMemo } from 'react';
-import { StyleSheet, View } from 'react-native';
+import React, { useEffect, useMemo, useRef } from 'react';
+import { Animated, Easing, View } from 'react-native';
 
 import { computeStreak, longestStreak } from '@/db/repositories/habits';
 import { useStore } from '@/store/useStore';
@@ -119,19 +119,15 @@ export function AnalyticsPanel({ windowDays = 14 }: AnalyticsPanelProps) {
           </View>
 
           <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 5, height: 108 }}>
-            {dailyFocus.map((day) => {
+            {dailyFocus.map((day, index) => {
               const ratio = day.seconds / peakSeconds;
               return (
                 <View key={day.dateKey} style={{ flex: 1, alignItems: 'center', gap: 4 }}>
-                  <View
-                    style={{
-                      width: '100%',
-                      height: Math.max(3, ratio * 92),
-                      borderRadius: 4,
-                      backgroundColor:
-                        day.seconds === 0 ? theme.colors.surfaceSunken : theme.colors.accent,
-                      opacity: day.seconds === 0 ? 1 : 0.35 + ratio * 0.65,
-                    }}
+                  <GrowingBar
+                    height={Math.max(3, ratio * 92)}
+                    delay={index * 16}
+                    color={day.seconds === 0 ? theme.colors.surfaceSunken : theme.colors.accent}
+                    opacity={day.seconds === 0 ? 1 : 0.35 + ratio * 0.65}
                   />
                   <Text variant="micro" color={theme.colors.textTertiary}>
                     {format(new Date(`${day.dateKey}T12:00:00`), 'EEEEE')}
@@ -260,18 +256,63 @@ function HourStrip({ hourly }: { hourly: number[] }) {
   return (
     <View style={{ flexDirection: 'row', gap: 2, alignItems: 'flex-end', height: 48 }}>
       {hourly.map((count, hour) => (
-        <View
+        <GrowingBar
           key={hour}
-          style={{
-            flex: 1,
-            height: Math.max(3, (count / max) * 44),
-            borderRadius: 2,
-            backgroundColor: count === 0 ? theme.colors.surfaceSunken : theme.colors.success,
-            opacity: count === 0 ? 1 : 0.4 + (count / max) * 0.6,
-          }}
+          flex
+          height={Math.max(3, (count / max) * 44)}
+          delay={hour * 12}
+          color={count === 0 ? theme.colors.surfaceSunken : theme.colors.success}
+          opacity={count === 0 ? 1 : 0.4 + (count / max) * 0.6}
         />
       ))}
     </View>
+  );
+}
+
+/**
+ * Chart bar that grows from the baseline when it mounts, and re-grows whenever
+ * the value changes (e.g. when the Insights range flips). Staggered by `delay`
+ * so a row of bars sweeps in left to right.
+ */
+function GrowingBar({
+  height,
+  color,
+  opacity,
+  delay = 0,
+  flex = false,
+}: {
+  height: number;
+  color: string;
+  opacity: number;
+  delay?: number;
+  flex?: boolean;
+}) {
+  const grow = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    grow.setValue(0);
+    const animation = Animated.timing(grow, {
+      toValue: 1,
+      duration: 420,
+      delay,
+      easing: Easing.out(Easing.cubic),
+      // Height is a layout prop, so the native driver cannot drive it.
+      useNativeDriver: false,
+    });
+    animation.start();
+    return () => animation.stop();
+  }, [delay, grow, height]);
+
+  return (
+    <Animated.View
+      style={{
+        ...(flex ? { flex: 1 } : { width: '100%' }),
+        height: grow.interpolate({ inputRange: [0, 1], outputRange: [3, height] }),
+        borderRadius: 4,
+        backgroundColor: color,
+        opacity,
+      }}
+    />
   );
 }
 

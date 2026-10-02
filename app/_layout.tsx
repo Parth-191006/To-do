@@ -3,7 +3,7 @@ import { Stack, useRouter } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import React, { useCallback, useEffect, useRef } from 'react';
-import { Animated, StyleSheet, View } from 'react-native';
+import { Animated, Linking, StyleSheet, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { Text } from '@/components/ui';
@@ -13,6 +13,7 @@ import {
   subscribeToNotificationResponses,
   type NotificationOutcome,
 } from '@/services/notifications';
+import { completeSignInFromUrl, isSupabaseConfigured } from '@/services/supabase/client';
 import { useStore } from '@/store/useStore';
 import { ThemeProvider, useTheme } from '@/theme/ThemeProvider';
 
@@ -59,6 +60,22 @@ export default function RootLayout() {
       if (outcome) handleOutcome(outcome);
     });
   }, [handleOutcome]);
+
+  // Magic-link sign-in: the link opened the app through the `taskflow://`
+  // scheme, so the redirect has to be consumed here — otherwise the link
+  // appears to do nothing and the user stays signed out forever.
+  useEffect(() => {
+    if (!isSupabaseConfigured) return;
+    const consume = (url: string | null) => {
+      if (!url) return;
+      void completeSignInFromUrl(url).then((signedIn) => {
+        if (signedIn) void refresh();
+      });
+    };
+    const subscription = Linking.addEventListener('url', ({ url }) => consume(url));
+    void Linking.getInitialURL().then(consume);
+    return () => subscription.remove();
+  }, [refresh]);
 
   useEffect(() => {
     if (status === 'ready' || status === 'error') {

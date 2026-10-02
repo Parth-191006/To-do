@@ -7,7 +7,7 @@ import { computeStreak } from '@/db/repositories/habits';
 import type { Habit, HabitLog } from '@/domain/types';
 import { useStore } from '@/store/useStore';
 import { useTheme } from '@/theme/ThemeProvider';
-import { success, tapLight } from '@/utils/haptics';
+import { success, tapLight, warning } from '@/utils/haptics';
 import { toDateKey } from '@/utils/id';
 
 import { EmptyState, Text } from './ui';
@@ -28,8 +28,10 @@ export function HabitTracker({ onOpenAnalytics }: HabitTrackerProps) {
   const habitLogs = useStore((s) => s.habitLogs);
   const toggleHabitToday = useStore((s) => s.toggleHabitToday);
   const addHabit = useStore((s) => s.addHabit);
+  const archiveHabit = useStore((s) => s.archiveHabit);
 
   const [newHabit, setNewHabit] = useState('');
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const today = toDateKey();
 
   const logsByHabit = useMemo(() => {
@@ -50,6 +52,21 @@ export function HabitTracker({ onOpenAnalytics }: HabitTrackerProps) {
       void toggleHabitToday(habit.id);
     },
     [toggleHabitToday],
+  );
+
+  /** Two-tap confirm, matching the list-delete pattern elsewhere in the app. */
+  const handleArchive = useCallback(
+    (habit: Habit) => {
+      if (confirmDeleteId !== habit.id) {
+        setConfirmDeleteId(habit.id);
+        setTimeout(() => setConfirmDeleteId((current) => (current === habit.id ? null : current)), 3200);
+        return;
+      }
+      setConfirmDeleteId(null);
+      warning();
+      void archiveHabit(habit.id);
+    },
+    [archiveHabit, confirmDeleteId],
   );
 
   if (activeHabits.length === 0) {
@@ -113,7 +130,26 @@ export function HabitTracker({ onOpenAnalytics }: HabitTrackerProps) {
                     {streak} day{streak === 1 ? '' : 's'} streak
                   </Text>
                 </View>
+                {confirmDeleteId === habit.id ? (
+                  <Text variant="micro" color={theme.colors.danger}>
+                    TAP THE TRASH ICON AGAIN TO REMOVE
+                  </Text>
+                ) : null}
               </View>
+
+              <Pressable
+                onPress={() => handleArchive(habit)}
+                hitSlop={8}
+                accessibilityLabel={
+                  confirmDeleteId === habit.id ? 'Confirm remove habit' : 'Remove habit'
+                }
+              >
+                <Ionicons
+                  name={confirmDeleteId === habit.id ? 'trash' : 'trash-outline'}
+                  size={18}
+                  color={confirmDeleteId === habit.id ? theme.colors.danger : theme.colors.textTertiary}
+                />
+              </Pressable>
 
               <Pressable
                 onPress={() => handleToggle(habit)}
@@ -201,7 +237,7 @@ function HabitInput({
     <TextInput
       value={value}
       onChangeText={onChange}
-      placeholder="Add a habit — “Read 20 pages”"
+      placeholder="New habit name"
       placeholderTextColor={theme.colors.textTertiary}
       returnKeyType="done"
       onSubmitEditing={() => {

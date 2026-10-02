@@ -1,13 +1,15 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useMemo, useState } from 'react';
-import { Pressable, ScrollView, TextInput, View } from 'react-native';
+import { Image, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { TaskCard } from '@/components/TaskCard';
 import { TaskEditorSheet } from '@/components/TaskEditorSheet';
 import { BottomSheet } from '@/components/BottomSheet';
 import { Card, Chip, EmptyState, Text } from '@/components/ui';
+import type { Attachment } from '@/domain/types';
 import { describeRecurrence } from '@/nlp/parser';
 import { childrenOf } from '@/store/selectors';
 import { useStore } from '@/store/useStore';
@@ -142,6 +144,35 @@ export default function TaskDetailScreen() {
           </Card>
         ) : null}
 
+        {/* Attachments were saved but never rendered before — a photo or voice
+            note added from Smart Input was invisible the moment you opened
+            the task. */}
+        {task.attachments.length > 0 ? (
+          <View style={{ gap: theme.spacing.sm }}>
+            <Text variant="heading">Attachments</Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.sm }}>
+              {task.attachments.map((attachment) =>
+                attachment.kind === 'image' ? (
+                  <Image
+                    key={attachment.id}
+                    source={{ uri: attachment.uri }}
+                    style={{
+                      width: 104,
+                      height: 104,
+                      borderRadius: theme.radii.lg,
+                      backgroundColor: theme.colors.surfaceSunken,
+                      borderWidth: 1,
+                      borderColor: theme.colors.border,
+                    }}
+                  />
+                ) : (
+                  <AudioAttachment key={attachment.id} attachment={attachment} />
+                ),
+              )}
+            </View>
+          </View>
+        ) : null}
+
         <View style={{ gap: theme.spacing.sm }}>
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
             <Text variant="heading">Subtasks</Text>
@@ -210,7 +241,6 @@ function AddSubtaskSheet({
 }) {
   const theme = useTheme();
   const [title, setTitle] = useState('');
-
   return (
     <BottomSheet visible={visible} onClose={onClose} title="Add subtask" heightRatio={0.34}>
       <View style={{ gap: theme.spacing.md, paddingTop: theme.spacing.lg }}>
@@ -247,5 +277,63 @@ function AddSubtaskSheet({
       </View>
     </BottomSheet>
   );
+}
+
+/** Inline play/pause chip for an audio attachment (voice quick-add notes). */
+function AudioAttachment({ attachment }: { attachment: Attachment }) {
+  const theme = useTheme();
+  const player = useAudioPlayer({ uri: attachment.uri });
+  const status = useAudioPlayerStatus(player);
+
+  return (
+    <Pressable
+      onPress={() => {
+        try {
+          if (status.playing) {
+            player.pause();
+          } else {
+            // Rewind once the note has played out, so pressing play again
+            // replays it instead of sitting silently at the end.
+            if (status.duration > 0 && status.currentTime >= status.duration) {
+              player.seekTo(0);
+            }
+            player.play();
+          }
+        } catch {
+          // A missing file must never crash the detail screen.
+        }
+      }}
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 7,
+        paddingVertical: 9,
+        paddingHorizontal: 12,
+        borderRadius: theme.radii.pill,
+        backgroundColor: theme.colors.surfaceSunken,
+        borderWidth: StyleSheet.hairlineWidth,
+        borderColor: theme.colors.border,
+      }}
+    >
+      <Ionicons
+        name={status.playing ? 'pause-circle' : 'play-circle'}
+        size={20}
+        color={theme.colors.accent}
+      />
+      <Text variant="caption" color={theme.colors.textSecondary}>
+        {attachment.name ?? 'Voice note'}
+      </Text>
+      <Text variant="micro" color={theme.colors.textTertiary}>
+        {formatClock(status.currentTime)} / {formatClock(status.duration)}
+      </Text>
+    </Pressable>
+  );
+}
+
+function formatClock(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
+  const total = Math.floor(seconds);
+  const minutes = Math.floor(total / 60);
+  return `${minutes}:${(total % 60).toString().padStart(2, '0')}`;
 }
 

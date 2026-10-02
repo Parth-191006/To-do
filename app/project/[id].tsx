@@ -1,9 +1,10 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Pressable, ScrollView, View } from 'react-native';
+import { Linking, Pressable, ScrollView, Share, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { BottomSheet } from '@/components/BottomSheet';
 import { ProgressRing } from '@/components/ProgressRing';
 import { ProjectSheet } from '@/components/ProjectSheet';
 import { TaskCard } from '@/components/TaskCard';
@@ -15,7 +16,11 @@ import { listMembers } from '@/db/repositories/projects';
 import { childrenOf, isOpen, sortByUrgency } from '@/store/selectors';
 import { useStore } from '@/store/useStore';
 import { useTheme } from '@/theme/ThemeProvider';
-import type { ActivityLog, SharedListMember } from '@/domain/types';
+import {
+  isSupabaseConfigured,
+  subscribeToProjectChanges,
+} from '@/services/supabase/client';
+import type { ActivityLog, Attachment, SharedListMember } from '@/domain/types';
 
 export default function ProjectScreen() {
   const theme = useTheme();
@@ -29,6 +34,8 @@ export default function ProjectScreen() {
   const removeTask = useStore((state) => state.removeTask);
   const breakDownTask = useStore((state) => state.breakDownTask);
   const addTaskFromInput = useStore((state) => state.addTaskFromInput);
+  const patchTask = useStore((state) => state.patchTask);
+  const refreshTasks = useStore((state) => state.refreshTasks);
 
   const removeProject = useStore((state) => state.removeProject);
 
@@ -37,6 +44,9 @@ export default function ProjectScreen() {
   const [activity, setActivity] = useState<ActivityLog[]>([]);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteNote, setInviteNote] = useState<string | null>(null);
 
   const project = useMemo(() => projects.find((entry) => entry.id === id) ?? null, [id, projects]);
 
@@ -60,12 +70,78 @@ export default function ProjectScreen() {
       .catch(() => undefined);
   }, [id, tasks]);
 
+  // Live collaboration: other members' writes land in Postgres and are streamed
+  // back, so an open list updates without a pull-to-refresh. The helper is a
+  // no-op when no backend is configured.
+  useEffect(() => {
+    if (!id || !isSupabaseConfigured) return;
+    return subscribeToProjectChanges(String(id), () => {
+      void refreshTasks();
+    });
+  }, [id, refreshTasks]);
+
   const handleSubmit = useCallback(
-    async (text: string) => {
-      await addTaskFromInput(text, { projectId: id });
+    async (text: string, attachments: Attachment[] = []) => {
+      const created = await addTaskFromInput(text, { projectId: id });
+      // Attachments used to be dropped on this screen — the input offered the
+      // mic and photo buttons, then `onSubmit` only forwarded the text.
+      if (created && attachments.length > 0) {
+        await patchTask(created.id, { attachments });
+      }
     },
-    [addTaskFromInput, id],
+    [addTaskFromInput, id, patchTask],
   );
+
+  /**
+   * "Invite by email" used to be a Chip with no `onPress` — a visibly dead
+   * button. It now opens a real email draft (or the OS share sheet when no
+   * mail app can handle `mailto:`), carrying the list name and the download
+   * link so the invite actually reaches someone.
+   */
+  const handleInvite = useCallback(async () => {
+    const email = inviteEmail.trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setInviteNote('Enter a valid email address.');
+      return;
+    }
+
+    const listName = project?.name ?? 'my list';
+    const subject = `Invitation to collaborate on “${listName}” in TaskFlow`;
+    const body = [
+      'Hi,',
+      '',
+      `I’d like to share the “${listName}” list from TaskFlow with you.`,
+      '',
+      'Get TaskFlow (Android):',
+      'https://github.com/Parth-191006/To-do/releases/latest/download/TaskFlow-latest.apk',
+      '',
+      isSupabaseConfigured
+        ? 'Once it is installed, open Settings › Sync and sign in with this email so our lists replicate.'
+        : 'Once it is installed we can connect a shared backend (Settings › Sync) so our lists replicate.',
+      '',
+      '— sent from TaskFlow',
+    ].join('\n');
+
+    const url = `mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    try {
+      const canOpen = await Linking.canOpenURL(url);
+      if (canOpen) {
+        await Linking.openURL(url);
+        setInviteNote('Opening your email app…');
+        return;
+      }
+    } catch {
+      // Fall through to the share sheet.
+    }
+    try {
+      const result = await Share.share({ message: `${subject}\n\n${body}` });
+      setInviteNote(
+        result.action === Share.sharedAction ? 'Invite shared.' : 'Invite dismissed.',
+      );
+    } catch {
+      setInviteNote('Could not open an email or share app on this device.');
+    }
+  }, [inviteEmail, project?.name]);
 
   if (!project) {
     return (
@@ -136,7 +212,7 @@ export default function ProjectScreen() {
           </View>
         </Card>
 
-        <SmartInput onSubmit={handleSubmit} placeholder={`Add to ${project.name}…`} />
+        <SmartInput onSubmit={handleSubmit} label={`Add to ${project.name}`} />
 
         <View style={{ gap: theme.spacing.sm }}>
           {projectTasks.length === 0 ? (
@@ -193,10 +269,19 @@ export default function ProjectScreen() {
             <Text variant="caption" color={theme.colors.textSecondary}>
               {members.length > 0
                 ? 'Members can complete and edit tasks in this list. Every change is logged above.'
-                : 'Share this list to work on it with a team, family or friends. Changes sync in real time.'}
+                : isSupabaseConfigured
+                  ? 'Share this list to work on it with a team, family or friends. Changes sync in real time.'
+                  : 'Invite someone by email to plan together. Real-time sync switches on when this build is connected to a Supabase backend (Settings › Sync).'}
             </Text>
             <View style={{ flexDirection: 'row', gap: theme.spacing.sm, flexWrap: 'wrap' }}>
-              <Chip label="Invite by email" icon="mail-outline" />
+              <Chip
+                label="Invite by email"
+                icon="mail-outline"
+                onPress={() => {
+                  setInviteNote(null);
+                  setInviteOpen(true);
+                }}
+              />
               {members.length > 0 ? <Chip label={`${members.length} member(s)`} icon="people-outline" /> : null}
             </View>
           </View>
@@ -214,6 +299,69 @@ export default function ProjectScreen() {
         project={project}
         onClose={() => setSheetOpen(false)}
       />
+
+      <BottomSheet
+        visible={inviteOpen}
+        onClose={() => {
+          setInviteOpen(false);
+          setInviteNote(null);
+        }}
+        title="Invite to this list"
+        subtitle="Opens a ready-made email draft in your own mail app."
+        heightRatio={0.62}
+      >
+        <View style={{ gap: theme.spacing.md, paddingTop: theme.spacing.lg }}>
+          <TextInput
+            value={inviteEmail}
+            onChangeText={setInviteEmail}
+            placeholder="teammate@example.com"
+            placeholderTextColor={theme.colors.textTertiary}
+            keyboardType="email-address"
+            autoCapitalize="none"
+            autoCorrect={false}
+            autoFocus
+            submitBehavior="submit"
+            onSubmitEditing={() => void handleInvite()}
+            style={[
+              theme.typography.body,
+              {
+                color: theme.colors.textPrimary,
+                backgroundColor: theme.colors.surfaceSunken,
+                borderRadius: theme.radii.md,
+                padding: theme.spacing.md,
+              },
+            ]}
+          />
+
+          {inviteNote ? (
+            <Text variant="caption" color={theme.colors.accent}>
+              {inviteNote}
+            </Text>
+          ) : null}
+
+          <View style={{ flexDirection: 'row', gap: theme.spacing.sm }}>
+            <Chip
+              label="Open email draft"
+              icon="mail-outline"
+              selected
+              onPress={() => void handleInvite()}
+            />
+            <Chip
+              label="Cancel"
+              onPress={() => {
+                setInviteOpen(false);
+                setInviteNote(null);
+              }}
+            />
+          </View>
+
+          <Text variant="micro" color={theme.colors.textTertiary}>
+            {isSupabaseConfigured
+              ? 'BOTH SIDES SIGN IN UNDER SETTINGS › SYNC FOR THE LIST TO REPLICATE LIVE.'
+              : 'CLOUD REPLICATION IS OFF ON THIS BUILD — THE INVITE CARRIES THE DOWNLOAD LINK SO THEY CAN INSTALL TASKFLOW.'}
+          </Text>
+        </View>
+      </BottomSheet>
     </View>
   );
 }

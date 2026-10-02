@@ -61,7 +61,7 @@ async function seedDefaults(db: SQLite.SQLiteDatabase): Promise<void> {
     `INSERT OR IGNORE INTO projects
        (id, name, color, icon, is_archived, position, created_at, updated_at, sync_state)
      VALUES (?, ?, ?, ?, 0, 0, ?, ?, 'pending')`,
-    ['local-inbox', 'Inbox', '#6C5CE7', 'inbox', now, now],
+    ['local-inbox', 'Inbox', '#0D9488', 'inbox', now, now],
   );
 }
 

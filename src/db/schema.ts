@@ -33,7 +33,7 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS projects (
   id          TEXT PRIMARY KEY,
   name        TEXT NOT NULL,
-  color       TEXT NOT NULL DEFAULT '#6C5CE7',
+  color       TEXT NOT NULL DEFAULT '#0D9488',
   icon        TEXT NOT NULL DEFAULT 'folder',
   is_archived INTEGER NOT NULL DEFAULT 0,
   position    REAL NOT NULL DEFAULT 0,
@@ -46,7 +46,7 @@ CREATE TABLE IF NOT EXISTS projects (
 CREATE TABLE IF NOT EXISTS tags (
   id         TEXT PRIMARY KEY,
   name       TEXT NOT NULL UNIQUE COLLATE NOCASE,
-  color      TEXT NOT NULL DEFAULT '#6C5CE7',
+  color      TEXT NOT NULL DEFAULT '#0D9488',
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   sync_state TEXT NOT NULL DEFAULT 'pending'

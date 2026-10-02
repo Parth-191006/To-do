@@ -12,14 +12,12 @@ import {
   isOverdue,
   sortByUrgency,
   summarizeDay,
-  topLevel,
 } from '@/store/selectors';
 import { useStore } from '@/store/useStore';
 import { useTheme } from '@/theme/ThemeProvider';
-import { tapHeavy, tapLight } from '@/utils/haptics';
+import { selection, tapHeavy, tapLight } from '@/utils/haptics';
 
 import { ProjectSheet } from './ProjectSheet';
-import { ProgressRing } from './ProgressRing';
 import { SmartInput } from './SmartInput';
 import { TaskCard } from './TaskCard';
 import { ViewSwitcher } from './ViewSwitcher';
@@ -33,6 +31,15 @@ function greeting(now = new Date()): string {
   if (hour < 12) return 'Good morning';
   if (hour < 18) return 'Good afternoon';
   return 'Good evening';
+}
+
+/** A slice of the day, ordered the way the list below is ordered. */
+interface TaskSection {
+  key: string;
+  label: string;
+  tasks: TaskWithTags[];
+  /** Tint the header when the section needs attention (overdue). */
+  attention?: boolean;
 }
 
 export function TaskDashboard() {
@@ -82,10 +89,40 @@ export function TaskDashboard() {
     [activeProjectId, search, tasks],
   );
 
-  const todayTasks = useMemo(
-    () => sortByUrgency(topLevel(tasks).filter((task) => isDueToday(task) || isOverdue(task))),
-    [tasks],
-  );
+  /**
+   * The list view is sorted into day-shaped buckets so "what should I do next"
+   * is answered top-down: Overdue → Today → Upcoming → Anytime → Completed.
+   * Everything else (board, agenda, matrix) keeps its own ordering.
+   */
+  const sections = useMemo<TaskSection[]>(() => {
+    const topLevelTasks = visibleTasks.filter((task) => task.parentId === null);
+    const buckets: Record<string, TaskWithTags[]> = {
+      overdue: [],
+      today: [],
+      upcoming: [],
+      anytime: [],
+      completed: [],
+    };
+
+    for (const task of topLevelTasks) {
+      if (!isOpen(task)) buckets.completed.push(task);
+      else if (isOverdue(task)) buckets.overdue.push(task);
+      else if (isDueToday(task)) buckets.today.push(task);
+      else if (task.dueAt) buckets.upcoming.push(task);
+      else buckets.anytime.push(task);
+    }
+
+    const built: TaskSection[] = [
+      { key: 'overdue', label: 'Overdue', tasks: buckets.overdue, attention: true },
+      { key: 'today', label: 'Today', tasks: buckets.today },
+      { key: 'upcoming', label: 'Upcoming', tasks: buckets.upcoming },
+      { key: 'anytime', label: 'Anytime', tasks: buckets.anytime },
+      { key: 'completed', label: 'Completed', tasks: buckets.completed },
+    ];
+    return built.filter((section) => section.tasks.length > 0);
+  }, [visibleTasks]);
+
+  const hasAnyTasks = sections.length > 0;
 
   const activeProject = useMemo(
     () => projects.find((project) => project.id === activeProjectId) ?? null,
@@ -144,76 +181,64 @@ export function TaskDashboard() {
     [confirmDeleteId, flash, removeProject],
   );
 
-  const listTasks = view === 'list' ? visibleTasks.filter((task) => task.parentId === null) : [];
-
   return (
     <View style={{ flex: 1 }}>
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 150, gap: theme.spacing.lg }}
       >
-        {/* Hero: greeting + today at a glance */}
-        <LinearGradient
-          colors={theme.colors.accentGradient}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={{
-            borderRadius: theme.radii['2xl'],
-            padding: theme.spacing.lg,
-            gap: theme.spacing.lg,
-            shadowColor: theme.colors.accent,
-            shadowOpacity: 0.32,
-            shadowRadius: 24,
-            shadowOffset: { width: 0, height: 12 },
-            elevation: 5,
-          }}
-        >
-          <View style={{ gap: 2 }}>
-            <Text variant="caption" color="rgba(255,255,255,0.78)">
-              {new Date().toLocaleDateString(undefined, {
-                weekday: 'long',
-                day: 'numeric',
-                month: 'long',
-              })}
-            </Text>
-            <Text variant="display" color="#FFFFFF">
-              {greeting()}
-            </Text>
-          </View>
+        {/* Greeting — plain type instead of a heavy gradient hero. */}
+        <View style={{ gap: 2 }}>
+          <Text variant="caption" color={theme.colors.textSecondary}>
+            {new Date().toLocaleDateString(undefined, {
+              weekday: 'long',
+              day: 'numeric',
+              month: 'long',
+            })}
+          </Text>
+          <Text variant="display">{greeting()}</Text>
+        </View>
 
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.lg }}>
-            <ProgressRing
-              progress={summary.completionRatio}
-              size={88}
-              strokeWidth={10}
-              color="#FFFFFF"
-              trackColor="rgba(255,255,255,0.24)"
-            >
-              <Text variant="title" color="#FFFFFF">
-                {Math.round(summary.completionRatio * 100)}%
-              </Text>
-              <Text variant="micro" color="rgba(255,255,255,0.8)">
-                DONE
-              </Text>
-            </ProgressRing>
-
-            <View style={{ flex: 1, gap: theme.spacing.sm }}>
-              <HeroStat label="Open today" value={`${summary.openTasks}`} icon="today-outline" />
-              <HeroStat
-                label="Overdue"
-                value={`${summary.overdue}`}
-                icon="alert-circle-outline"
-                dim={summary.overdue === 0}
-              />
-              <HeroStat label="Focus today" value={`${summary.focusMinutes}m`} icon="timer-outline" />
-              <HeroStat
-                label="Completed"
-                value={`${summary.completedToday}`}
-                icon="checkmark-done-outline"
-              />
-            </View>
+        {/* Day at a glance — four numbers and one bar, no card chrome. */}
+        <View style={{ gap: theme.spacing.md }}>
+          <View style={{ flexDirection: 'row' }}>
+            <StatColumn
+              icon="today-outline"
+              value={`${summary.openTasks}`}
+              label="DUE TODAY"
+            />
+            <StatColumn
+              icon="alert-circle-outline"
+              value={`${summary.overdue}`}
+              label="OVERDUE"
+              tint={summary.overdue > 0 ? theme.colors.danger : undefined}
+            />
+            <StatColumn icon="timer-outline" value={`${summary.focusMinutes}m`} label="FOCUS" />
+            <StatColumn
+              icon="checkmark-done-outline"
+              value={`${summary.completedToday}`}
+              label="DONE"
+              tint={summary.completedToday > 0 ? theme.colors.success : undefined}
+            />
           </View>
-        </LinearGradient>
+          <View
+            style={{
+              height: 4,
+              borderRadius: 2,
+              backgroundColor: theme.colors.surfaceSunken,
+              overflow: 'hidden',
+            }}
+          >
+            <View
+              style={{
+                width: `${Math.round(summary.completionRatio * 100)}%`,
+                height: '100%',
+                borderRadius: 2,
+                backgroundColor: theme.colors.accent,
+              }}
+            />
+          </View>
+        </View>
 
         {/* Capture */}
         <SmartInput
@@ -223,7 +248,7 @@ export function TaskDashboard() {
               await patchTask(created.id, { attachments });
             }
           }}
-          hint="Dates, times, #tags and !priority are detected as you type."
+          hint="Type naturally — dates, times, #tags, !priority and ~estimates are read automatically."
         />
 
         {/* Project filter */}
@@ -232,13 +257,24 @@ export function TaskDashboard() {
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={{ gap: theme.spacing.sm }}
         >
-          <Pressable onPress={() => setActiveProject(null)}>
+          <Pressable
+            onPress={() => {
+              selection();
+              setActiveProject(null);
+            }}
+          >
             <FilterPill label="All" active={activeProjectId === null} />
           </Pressable>
           {projects
             .filter((project) => !project.isArchived)
             .map((project) => (
-              <Pressable key={project.id} onPress={() => setActiveProject(project.id)}>
+              <Pressable
+                key={project.id}
+                onPress={() => {
+                  selection();
+                  setActiveProject(project.id);
+                }}
+              >
                 <FilterPill
                   label={project.name}
                   color={project.color}
@@ -257,7 +293,7 @@ export function TaskDashboard() {
           </Pressable>
         </ScrollView>
 
-        {/* Active-project toolbar — the entry point the app was missing. */}
+        {/* Active-project toolbar — rename / open / delete without leaving the tab. */}
         {activeProject ? (
           <View
             style={{
@@ -313,6 +349,16 @@ export function TaskDashboard() {
 
         <ViewSwitcher value={view} onChange={setView} />
 
+        {/* The swipe and long-press gestures are invisible otherwise. */}
+        {view === 'list' && hasAnyTasks ? (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <Ionicons name="hand-left-outline" size={13} color={theme.colors.textTertiary} />
+            <Text variant="micro" color={theme.colors.textTertiary} style={{ flex: 1 }}>
+              SWIPE RIGHT TO COMPLETE · SWIPE LEFT TO DELETE · HOLD A TASK FOR AI BREAKDOWN
+            </Text>
+          </View>
+        ) : null}
+
         {banner ? (
           <View
             style={{
@@ -330,37 +376,69 @@ export function TaskDashboard() {
 
         {/* Content */}
         {view === 'list' ? (
-          <View style={{ gap: theme.spacing.sm }}>
-            {todayTasks.length > 0 && activeProjectId === null && !search ? (
-              <Text variant="label" color={theme.colors.textSecondary}>
-                Today
-              </Text>
-            ) : null}
-
-            {listTasks.length === 0 ? (
-              <EmptyState
-                icon="checkmark-done-outline"
-                title={search ? 'No matches' : 'All clear'}
-                subtitle={
-                  search
-                    ? 'Try a different search term.'
-                    : 'Add your first task above — try “Review designs tomorrow 4pm #work !high”.'
-                }
-              />
-            ) : (
-              listTasks.map((task) => (
-                <TaskCard
-                  key={task.id}
-                  task={task}
-                  allTasks={tasks}
-                  onToggle={toggleTask}
-                  onPress={handleOpen}
-                  onDelete={handleDelete}
-                  onBreakDown={handleBreakDown}
-                />
-              ))
-            )}
-          </View>
+          !hasAnyTasks ? (
+            <EmptyState
+              icon="checkmark-done-outline"
+              title={search ? 'No matches' : 'All clear'}
+              subtitle={
+                search
+                  ? 'Try a different search term.'
+                  : 'Add your first task above — try “Review designs tomorrow 4pm #work !high”.'
+              }
+            />
+          ) : (
+            <View style={{ gap: theme.spacing.xl }}>
+              {sections.map((section) => (
+                <View key={section.key} style={{ gap: theme.spacing.sm }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
+                    <View
+                      style={{
+                        width: 6,
+                        height: 6,
+                        borderRadius: 3,
+                        backgroundColor: section.attention
+                          ? theme.colors.danger
+                          : theme.colors.accent,
+                      }}
+                    />
+                    <Text
+                      variant="micro"
+                      color={
+                        section.attention ? theme.colors.danger : theme.colors.textSecondary
+                      }
+                    >
+                      {section.label.toUpperCase()}
+                    </Text>
+                    <View
+                      style={{
+                        minWidth: 18,
+                        paddingHorizontal: 6,
+                        paddingVertical: 1,
+                        borderRadius: theme.radii.pill,
+                        backgroundColor: theme.colors.surfaceSunken,
+                        alignItems: 'center',
+                      }}
+                    >
+                      <Text variant="micro" color={theme.colors.textTertiary}>
+                        {section.tasks.length}
+                      </Text>
+                    </View>
+                  </View>
+                  {section.tasks.map((task) => (
+                    <TaskCard
+                      key={task.id}
+                      task={task}
+                      allTasks={tasks}
+                      onToggle={toggleTask}
+                      onPress={handleOpen}
+                      onDelete={handleDelete}
+                      onBreakDown={handleBreakDown}
+                    />
+                  ))}
+                </View>
+              ))}
+            </View>
+          )
         ) : null}
 
         {view === 'kanban' ? (
@@ -376,19 +454,19 @@ export function TaskDashboard() {
       {fabOpen ? (
         <View style={{ position: 'absolute', right: 20, bottom: 96, alignItems: 'flex-end', gap: theme.spacing.sm }}>
           <FabAction
-            icon="timer-outline"
-            label="Start focus"
-            onPress={() => {
-              setFabOpen(false);
-              router.push('/focus');
-            }}
-          />
-          <FabAction
             icon="folder-outline"
             label="New list"
             onPress={() => {
               setFabOpen(false);
               setProjectSheet({ open: true, editing: null });
+            }}
+          />
+          <FabAction
+            icon="timer-outline"
+            label="Start focus"
+            onPress={() => {
+              setFabOpen(false);
+              router.push('/focus');
             }}
           />
           <FabAction
@@ -446,25 +524,31 @@ export function TaskDashboard() {
   );
 }
 
-function HeroStat({
-  label,
-  value,
+/**
+ * One number + a micro label, with an icon so each figure is self-describing.
+ * Four of these replace the old gradient hero.
+ */
+function StatColumn({
   icon,
-  dim = false,
+  value,
+  label,
+  tint,
 }: {
-  label: string;
-  value: string;
   icon: keyof typeof Ionicons.glyphMap;
-  dim?: boolean;
+  value: string;
+  label: string;
+  tint?: string;
 }) {
-  const tint = dim ? 'rgba(255,255,255,0.6)' : '#FFFFFF';
+  const theme = useTheme();
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-      <Ionicons name={icon} size={14} color={tint} />
-      <Text variant="caption" color="rgba(255,255,255,0.82)" style={{ flex: 1 }}>
-        {label}
-      </Text>
-      <Text variant="bodyStrong" color={tint}>
+    <View style={{ flex: 1, gap: 4 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+        <Ionicons name={icon} size={12} color={tint ?? theme.colors.textTertiary} />
+        <Text variant="micro" color={tint ?? theme.colors.textTertiary} numberOfLines={1}>
+          {label}
+        </Text>
+      </View>
+      <Text variant="title" color={tint ?? theme.colors.textPrimary}>
         {value}
       </Text>
     </View>
@@ -547,7 +631,10 @@ function FilterPill({
         {label}
       </Text>
       {typeof count === 'number' && count > 0 ? (
-        <Text variant="micro" color={active ? 'rgba(255,255,255,0.85)' : theme.colors.textTertiary}>
+        <Text
+          variant="micro"
+          color={active ? theme.colors.accentContrast : theme.colors.textTertiary}
+        >
           {count}
         </Text>
       ) : null}

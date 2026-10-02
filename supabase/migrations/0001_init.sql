@@ -44,7 +44,7 @@ create table if not exists public.projects (
   id          uuid primary key default uuid_generate_v4(),
   owner_id    uuid not null references auth.users(id) on delete cascade,
   name        text not null,
-  color       text not null default '#6C5CE7',
+  color       text not null default '#0D9488',
   icon        text not null default 'folder',
   is_archived boolean not null default false,
   position    double precision not null default 0,
@@ -57,7 +57,7 @@ create table if not exists public.tags (
   id         uuid primary key default uuid_generate_v4(),
   owner_id   uuid not null references auth.users(id) on delete cascade,
   name       text not null,
-  color      text not null default '#6C5CE7',
+  color      text not null default '#0D9488',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique (owner_id, name)

@@ -10,6 +10,7 @@ import { EmptyState, Text } from '@/components/ui';
 import { isOpen, sortByUrgency, topLevel } from '@/store/selectors';
 import { useStore } from '@/store/useStore';
 import { useTheme } from '@/theme/ThemeProvider';
+import { selection } from '@/utils/haptics';
 
 type Filter = 'all' | 'open' | 'overdue' | 'done';
 
@@ -97,7 +98,10 @@ export default function InboxScreen() {
           {FILTERS.map((entry) => (
             <Pressable
               key={entry.key}
-              onPress={() => setFilter(entry.key)}
+              onPress={() => {
+                selection();
+                setFilter(entry.key);
+              }}
               style={{
                 paddingVertical: 7,
                 paddingHorizontal: 14,
@@ -120,7 +124,13 @@ export default function InboxScreen() {
         {tags.length > 0 ? (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: theme.spacing.sm }}>
             {tags.map((tag) => (
-              <Pressable key={tag.id} onPress={() => setActiveTagId(activeTagId === tag.id ? null : tag.id)}>
+              <Pressable
+                key={tag.id}
+                onPress={() => {
+                  selection();
+                  setActiveTagId(activeTagId === tag.id ? null : tag.id);
+                }}
+              >
                 <View
                   style={{
                     flexDirection: 'row',

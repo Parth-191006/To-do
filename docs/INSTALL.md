@@ -48,18 +48,18 @@ Google Drive / Telegram / WhatsApp "message to self", or copy it over USB.
 
 ### Updating later
 
-The workflow signs every build with the **same** key (it mints one on the very
-first run and keeps it in the Actions cache afterwards), so a newer APK installs
-straight over the old one and your tasks are preserved.
+Every build is signed with the **same** key: it is minted once, kept in the
+Actions cache, and refreshed on every push to `main`. A newer APK therefore
+installs straight over the old one and your tasks and habits are preserved —
+just download and tap again, with nothing to uninstall.
 
-Two cases still need a clean install — uninstall first, then install the new
-APK. Your data is local, so uninstalling removes tasks and habits:
+The one exception is an install from a build made **before the CI keystore was
+pinned** (v1.1.0 or earlier). That signature cannot be reproduced, so uninstall
+it once and install the current release. Data lives on the device, so
+uninstalling clears tasks and habits — install v1.1.1 or later and this never
+comes up again.
 
-- the very first cached-keystore build if you are upgrading from a build made
-  before keystore caching existed;
-- a build made after the cache expired (roughly 7 days without a run).
-
-For an identity that can never lapse, pin your own key — see
+Prefer an identity that can never lapse? Pin your own key — see
 [Release with your own keystore](#release-with-your-own-keystore).
 
 ### Troubleshooting

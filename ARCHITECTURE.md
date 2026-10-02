@@ -281,7 +281,8 @@ This suite caught three genuine bugs during development: an off-by-one in the
 | `categories.ts` | Registers action categories; sets the foreground handler; creates Android channels |
 | `scheduler.ts` | Owns the Task/Habit → OS-request mapping, urgency routing, snooze primitives |
 | `actions.ts` | Turns an actionable tap into a real domain mutation |
-| `geofence.ts` | Registers geofences and runs the headless task that posts the alert |
+| `geofence.ts` | Native half: registers geofences, runs the headless task, owns the payload map |
+| `geofenceSync.ts` | Pure re-arm gate: signature of the effective region set, queueing, plan building (covered by `npm run verify:geofence`) |
 
 ### Scheduling pipeline
 
@@ -341,6 +342,9 @@ each tier in system settings without losing the others.
 
 1. `syncGeofences(tasks)` re-registers the *whole* region set (the API replaces
    rather than appends), with region identifiers of the form `taskflow:<taskId>`.
+   It runs after **every** task mutation (not just at cold start) but is gated
+   on a signature of the effective region set, so unchanged fences never touch
+   the OS and a denied permission stays retryable — see `geofenceSync.ts`.
 2. `TaskManager.defineTask(GEOFENCE_TASK, …)` is declared at module scope so the
    OS can invoke it after a cold start, with no React tree mounted.
 3. The headless task resolves the task id from the region identifier and posts
@@ -419,7 +423,7 @@ If a paywall is ever reintroduced, the clean insertion point is a single
 
 `src/theme/tokens.ts` (values) + `src/theme/ThemeProvider.tsx` (context).
 
-- **Palette** — one accent (`#6C5CE7`), a small semantic priority ramp, and a
+- **Palette** — one accent (teal: `#0F766E` light / `#2DD4BF` dark), a small semantic priority ramp, and a
   neutral scale. Light and dark themes are declared side by side so they cannot
   drift.
 - **Typography** — nine tokens (`display` → `micro`) with tuned sizes, weights

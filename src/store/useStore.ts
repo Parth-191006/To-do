@@ -22,6 +22,7 @@ import {
   habitToggleDelta,
   listAllHabitLogs,
   listHabits,
+  updateHabit,
 } from '@/db/repositories/habits';
 import { endFocusSession, listFocusSessions, startFocusSession } from '@/db/repositories/focus';
 import { logActivity } from '@/db/repositories/activity';
@@ -85,6 +86,7 @@ export interface AppState {
   removeProject: (id: string) => Promise<void>;
 
   addHabit: (name: string, color?: string) => Promise<void>;
+  archiveHabit: (habitId: string) => Promise<void>;
   toggleHabitToday: (habitId: string) => Promise<void>;
 
   beginFocus: (taskId?: string | null, projectId?: string | null) => Promise<FocusSession>;
@@ -175,6 +177,11 @@ export const useStore = create<AppState>()((set, get) => ({
   async refreshTasks() {
     const tasks = await listTasks({ status: 'all', includeCompleted: true });
     set({ tasks });
+    // Every task mutation lands here, so this is the single place place
+    // reminders need re-arming (add, edit, complete, delete). The sync is
+    // signature-gated, so it costs one string compare when nothing about the
+    // fences changed — previously they were only re-armed on a cold start.
+    void syncGeofences(tasks).catch(() => undefined);
   },
 
   async addTaskFromInput(raw, overrides = {}) {
@@ -327,6 +334,17 @@ export const useStore = create<AppState>()((set, get) => ({
   async addHabit(name, color) {
     await guard(set, 'Could not create that habit', async () => {
       await createHabitRepo({ name, color });
+      set({ habits: await listHabits(true) });
+    });
+  },
+
+  /**
+   * Archives a habit (soft delete). Without this a habit was unremovable —
+   * there was a create button and no way back.
+   */
+  async archiveHabit(habitId) {
+    await guard(set, 'Could not remove that habit', async () => {
+      await updateHabit(habitId, { isArchived: true });
       set({ habits: await listHabits(true) });
     });
   },

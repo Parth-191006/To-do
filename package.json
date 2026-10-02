@@ -1,6 +1,6 @@
 {
   "name": "taskflow",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "main": "expo-router/entry",
   "dependencies": {
     "@expo/vector-icons": "^15.1.1",
@@ -53,7 +53,8 @@
     "verify:clock": "node --experimental-strip-types scripts/verify-focus-clock.ts",
     "verify:habits": "node --experimental-strip-types scripts/verify-habits.ts",
     "verify:schema": "node --experimental-strip-types --experimental-sqlite scripts/verify-schema.ts",
-    "verify": "npm run typecheck && npm run verify:nlp && npm run verify:clock && npm run verify:habits && npm run verify:schema"
+    "verify:geofence": "node --experimental-strip-types scripts/verify-geofence.ts",
+    "verify": "npm run typecheck && npm run verify:nlp && npm run verify:clock && npm run verify:habits && npm run verify:schema && npm run verify:geofence"
   },
   "private": true
 }

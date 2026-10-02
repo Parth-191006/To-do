@@ -5,7 +5,7 @@ import { getDatabase } from '../client';
 import { toTag } from '../mappers';
 
 const COLORS = [
-  '#6C5CE7',
+  '#0D9488',
   '#0EA5E9',
   '#10B981',
   '#F59E0B',

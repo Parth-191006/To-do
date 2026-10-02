@@ -7,23 +7,31 @@
  *
  * Palette strategy
  * ----------------
- * - Two accent stops (`accent` → `accentSecondary`) drive gradients so the app
- *   has a recognisable identity in both themes instead of a flat fill.
- * - Surfaces step up in three tiers (sunken → surface → elevated) with a subtle
- *   violet tint in dark mode, so cards read as cards rather than as mush.
- * - Priority is five *distinct* hues. High (orange) and urgent (red) used to be
- *   the same colour, which made the two most important tiers impossible to tell
- *   apart at a glance.
+ * - Brand accent is **teal** (`#0F766E` light / `#2DD4BF` dark). Two accent
+ *   stops (`accent` → `accentSecondary`) drive gradients so the app has a
+ *   recognisable identity in both themes instead of a flat fill.
+ * - Surfaces step up in three tiers (sunken → surface → elevated) with a
+ *   subtle teal tint in both themes, so cards read as cards rather than mush
+ *   and the neutrals belong to the same family as the accent.
+ * - Dark-mode `accentContrast` flips to a near-black teal: selected chips and
+ *   the FAB render dark-on-bright, which keeps >7:1 contrast where white on a
+ *   bright teal accent would have failed.
+ * - Priority is five *distinct* hues. High (orange) and urgent (red) must stay
+ *   distinguishable at a glance, so the semantic ramp is intentionally kept
+ *   independent of the brand colour.
  */
 
 export const palette = {
-  indigo50: '#EEF0FF',
-  indigo100: '#E0E2FF',
-  indigo200: '#C7C9FF',
-  indigo400: '#8B7CF6',
-  indigo500: '#6C5CE7',
-  indigo600: '#5A48D6',
-  indigo700: '#4536A8',
+  // Brand ramp — teal.
+  teal50: '#E7F7F5',
+  teal100: '#CDEEEA',
+  teal200: '#9DE1DA',
+  teal400: '#2DD4BF',
+  teal500: '#14B8A6',
+  teal600: '#0D9488',
+  teal700: '#0F766E',
+  teal800: '#115E59',
+  teal900: '#134E4A',
 
   rose400: '#FB7185',
   rose500: '#F43F5E',
@@ -34,11 +42,11 @@ export const palette = {
   amber500: '#F59E0B',
   emerald400: '#34D399',
   emerald500: '#10B981',
-  teal400: '#2DD4BF',
+  tealAccent: '#2DD4BF',
   sky400: '#38BDF8',
   sky500: '#0EA5E9',
   violet400: '#A78BFA',
-  violet600: '#9333EA',
+  indigo500: '#6C5CE7',
   fuchsia400: '#E879F9',
 
   slate25: '#FCFCFD',
@@ -54,28 +62,33 @@ export const palette = {
   slate800: '#1E293B',
   slate900: '#0F172A',
 
-  // Cool, slightly violet-tinted dark ramp — less "pure black", easier on the eyes.
-  ink0: '#08080F',
-  ink1: '#101019',
-  ink2: '#181826',
-  ink3: '#222234',
-  ink4: '#2E2E45',
-  ink5: '#3B3B57',
+  // Cool, slightly teal-tinted dark ramp — less "pure black", easier on the
+  // eyes, and the neutrals sit in the same colour family as the accent.
+  ink0: '#050B0B',
+  ink1: '#0C1314',
+  ink2: '#141D1E',
+  ink3: '#1D2728',
+  ink4: '#283435',
+  ink5: '#354344',
 
   white: '#FFFFFF',
   black: '#000000',
 } as const;
 
-/** Colours offered in the tag / project / habit colour picker. */
+/**
+ * Colours offered in the tag / project / habit colour picker.
+ * Brand teal leads; index 5 stays amber because recurrence chips address
+ * `swatches[5]` directly.
+ */
 export const swatches = [
-  palette.indigo500,
-  palette.violet400,
+  palette.teal600,
   palette.sky500,
-  palette.teal400,
   palette.emerald500,
+  palette.violet400,
+  palette.rose500,
   palette.amber500,
   palette.orange500,
-  palette.rose500,
+  palette.indigo500,
   palette.fuchsia400,
   palette.slate500,
 ] as const;
@@ -124,7 +137,7 @@ export interface ThemeColors {
   textInverse: string;
   accent: string;
   accentSecondary: string;
-  /** `[from, to]` stops for gradient surfaces — hero cards, the FAB, rings. */
+  /** `[from, to]` stops for gradient surfaces — empty states, rings. */
   accentGradient: [string, string];
   accentSoft: string;
   accentContrast: string;
@@ -141,21 +154,22 @@ export interface ThemeColors {
 }
 
 export const lightColors: ThemeColors = {
-  background: '#F5F7FC',
-  backgroundAlt: '#EDF1FA',
+  background: '#F4F8F7',
+  backgroundAlt: '#EAF2F0',
   surface: palette.white,
   surfaceElevated: palette.white,
-  surfaceSunken: '#EEF1F8',
-  border: '#E4E9F2',
-  borderStrong: palette.slate300,
+  surfaceSunken: '#EDF3F2',
+  border: '#E2ECEA',
+  borderStrong: '#C7D7D4',
   textPrimary: '#111827',
   textSecondary: '#5A6478',
   textTertiary: '#8A93A6',
   textInverse: palette.white,
-  accent: palette.indigo500,
-  accentSecondary: palette.violet400,
-  accentGradient: [palette.indigo500, palette.violet400],
-  accentSoft: palette.indigo50,
+  // Teal-700: passes AA as small text on white *and* under white text.
+  accent: palette.teal700,
+  accentSecondary: palette.teal500,
+  accentGradient: [palette.teal700, palette.teal500],
+  accentSoft: palette.teal100,
   accentContrast: palette.white,
   overlay: 'rgba(15, 23, 42, 0.45)',
   danger: palette.rose500,
@@ -178,7 +192,7 @@ export const lightColors: ThemeColors = {
     high: '#FFEDD5',
     urgent: '#FFE4E6',
   },
-  shadow: 'rgba(24, 33, 61, 0.12)',
+  shadow: 'rgba(14, 47, 43, 0.12)',
 };
 
 export const darkColors: ThemeColors = {
@@ -189,17 +203,18 @@ export const darkColors: ThemeColors = {
   surfaceSunken: palette.ink3,
   border: palette.ink3,
   borderStrong: palette.ink4,
-  textPrimary: '#F6F7FC',
-  textSecondary: '#A4ADC0',
-  textTertiary: '#727C93',
+  textPrimary: '#F2F7F6',
+  textSecondary: '#A4B4B2',
+  textTertiary: '#71817F',
   textInverse: palette.ink0,
-  accent: palette.indigo400,
-  // Gradient stops stay deep enough that white text/images on them keep ~4.5:1
-  // contrast; the brighter violet is reserved for the accent tint itself.
-  accentSecondary: palette.violet600,
-  accentGradient: [palette.indigo500, palette.violet600],
-  accentSoft: 'rgba(139, 124, 246, 0.18)',
-  accentContrast: palette.white,
+  // Bright teal reads as a link/label on the dark ramp…
+  accent: palette.teal400,
+  accentSecondary: palette.teal500,
+  // …while gradient surfaces stay bright so the flipped dark accentContrast
+  // keeps >7:1 contrast wherever it sits on top of them.
+  accentGradient: [palette.teal400, palette.teal500],
+  accentSoft: 'rgba(45, 212, 191, 0.16)',
+  accentContrast: '#04211E',
   overlay: 'rgba(0, 0, 0, 0.66)',
   danger: palette.rose400,
   dangerSoft: 'rgba(251, 113, 133, 0.16)',
@@ -208,7 +223,7 @@ export const darkColors: ThemeColors = {
   warning: palette.amber400,
   warningSoft: 'rgba(251, 191, 36, 0.16)',
   priority: {
-    none: palette.slate500,
+    none: '#8FA09E',
     low: palette.sky400,
     medium: palette.amber400,
     high: palette.orange400,

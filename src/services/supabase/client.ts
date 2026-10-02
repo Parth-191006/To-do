@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Linking from 'expo-linking';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import 'react-native-url-polyfill/auto';
 
@@ -49,12 +50,67 @@ export async function getCurrentUserId(): Promise<string | null> {
 export async function signInWithOtp(email: string): Promise<{ error: string | null }> {
   const supabase = getSupabase();
   if (!supabase) return { error: 'Supabase is not configured on this build.' };
-  const { error } = await supabase.auth.signInWithOtp({ email });
+  const { error } = await supabase.auth.signInWithOtp({
+    email,
+    options: {
+      // Bring the magic link back into the app instead of a browser tab.
+      emailRedirectTo: Linking.createURL('/'),
+    },
+  });
   return { error: error?.message ?? null };
 }
 
 export async function signOut(): Promise<void> {
   await getSupabase()?.auth.signOut();
+}
+
+/** The signed-in user's email, or null when signed out / unconfigured. */
+export async function getSessionEmail(): Promise<string | null> {
+  const supabase = getSupabase();
+  if (!supabase) return null;
+  const { data } = await supabase.auth.getSession();
+  return data.session?.user.email ?? null;
+}
+
+/** Fires whenever the auth session changes (sign-in link opened, token refreshed, sign-out). */
+export function subscribeToAuthChanges(onChange: () => void): () => void {
+  const supabase = getSupabase();
+  if (!supabase) return () => undefined;
+  const { data } = supabase.auth.onAuthStateChange(() => onChange());
+  return () => data.subscription.unsubscribe();
+}
+
+/**
+ * Consumes the redirect the magic link opened the app with.
+ * Handles both flows: PKCE (`?code=`) and implicit (`#access_token=…`).
+ * Returns true when a session was established, so the caller can refresh.
+ */
+export async function completeSignInFromUrl(url: string): Promise<boolean> {
+  const supabase = getSupabase();
+  if (!supabase) return false;
+  try {
+    const parsed = new URL(url);
+
+    const code = parsed.searchParams.get('code');
+    if (code) {
+      const { error } = await supabase.auth.exchangeCodeForSession(code);
+      return !error;
+    }
+
+    const fragment = new URLSearchParams(parsed.hash.replace(/^#/, ''));
+    const accessToken = fragment.get('access_token');
+    const refreshToken = fragment.get('refresh_token');
+    if (accessToken && refreshToken) {
+      const { error } = await supabase.auth.setSession({
+        access_token: accessToken,
+        refresh_token: refreshToken,
+      });
+      return !error;
+    }
+  } catch {
+    // Malformed redirect — leave the user signed out rather than crash.
+  }
+  return false;
 }
 
 /**

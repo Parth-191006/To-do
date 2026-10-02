@@ -95,7 +95,7 @@ export async function configureNotificationChannels(): Promise<void> {
     importance: Notifications.AndroidImportance.DEFAULT,
     description: 'Standard task and project reminders.',
     vibrationPattern: [0, 200, 100, 200],
-    lightColor: '#6C5CE7',
+    lightColor: '#0D9488',
   });
 
   // Urgent tasks bypass Do Not Disturb where the OS permission allows it.

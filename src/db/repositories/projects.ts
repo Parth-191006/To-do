@@ -46,7 +46,7 @@ export async function createProject(input: {
   const project: Project = {
     id: createId('prj_'),
     name: input.name.trim() || 'New project',
-    color: input.color ?? '#6C5CE7',
+    color: input.color ?? '#0D9488',
     icon: input.icon ?? 'folder',
     isArchived: false,
     position: Date.now(),

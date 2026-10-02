@@ -216,7 +216,7 @@ export async function scheduleTaskNotifications(task: TaskWithTags): Promise<Sch
         body: plan.body,
         categoryIdentifier: CATEGORY_TASK,
         sound: 'default',
-        color: channelId === 'taskflow-urgent' ? '#F43F5E' : '#6C5CE7',
+        color: channelId === 'taskflow-urgent' ? '#F43F5E' : '#0D9488',
         priority: priorityOrder(task.priority),
         interruptionLevel: interruptionLevel(task.priority),
         data: {
@@ -419,7 +419,7 @@ export async function sendTestNotification(
       body: 'This is exactly how your reminders will look.',
       sound: 'default',
       categoryIdentifier: CATEGORY_TASK,
-      color: '#6C5CE7',
+      color: '#0D9488',
       data: { kind: 'test', url: '/' },
     },
     trigger: {
