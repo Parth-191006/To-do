@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Linking, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { Linking, Pressable, ScrollView, StyleSheet, Switch, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BrandMark } from '@/components/BrandMark';
@@ -24,6 +24,7 @@ import {
   subscribeToAuthChanges,
 } from '@/services/supabase/client';
 import { pendingChangeCount, runSync } from '@/services/sync/engine';
+import { usePreferences } from '@/store/usePreferences';
 import { useStore } from '@/store/useStore';
 import { useTheme, useThemePreference } from '@/theme/ThemeProvider';
 import type { ThemePreference } from '@/theme/ThemeProvider';
@@ -44,6 +45,9 @@ export default function SettingsScreen() {
   const projects = useStore((state) => state.projects);
   const tasks = useStore((state) => state.tasks);
   const habits = useStore((state) => state.habits);
+
+  const autoStartBreak = usePreferences((state) => state.autoStartBreak);
+  const setAutoStartBreak = usePreferences((state) => state.setAutoStartBreak);
 
   const [permission, setPermission] = useState<'granted' | 'denied' | 'undetermined'>('undetermined');
   const [pending, setPending] = useState(0);
@@ -311,6 +315,19 @@ export default function SettingsScreen() {
           </Text>
         </Section>
 
+        <Section title="Focus" icon="timer-outline">
+          <ToggleRow
+            label="Auto-start breaks"
+            caption="When a focus block reaches zero, the break countdown starts right away instead of waiting for you to press start."
+            value={autoStartBreak}
+            onChange={setAutoStartBreak}
+          />
+          <Text variant="micro" color={theme.colors.textTertiary}>
+            THE BREAK KEEPS TIME AGAINST THE WALL CLOCK — LOCK THE SCREEN OR LEAVE THE APP AND IT STILL
+            COUNTS DOWN AND FIRES THE END ALERT.
+          </Text>
+        </Section>
+
         <Section title="Sync" icon="cloud-outline">
           <Row label="Backend" value={isSupabaseConfigured ? 'Supabase connected' : 'Local only'} />
           <Row label="Pending changes" value={`${pending}`} />
@@ -444,6 +461,47 @@ function Row({ label, value }: { label: string; value: string }) {
         {label}
       </Text>
       <Text variant="caption">{value}</Text>
+    </View>
+  );
+}
+
+function ToggleRow({
+  label,
+  caption,
+  value,
+  onChange,
+}: {
+  label: string;
+  caption: string;
+  value: boolean;
+  onChange: (next: boolean) => void;
+}) {
+  const theme = useTheme();
+  return (
+    <View
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: theme.spacing.md,
+        paddingVertical: theme.spacing.sm,
+        borderBottomWidth: StyleSheet.hairlineWidth,
+        borderBottomColor: theme.colors.border,
+      }}
+    >
+      <View style={{ flex: 1, gap: 2 }}>
+        <Text variant="body">{label}</Text>
+        <Text variant="caption" color={theme.colors.textSecondary}>
+          {caption}
+        </Text>
+      </View>
+      <Switch
+        value={value}
+        onValueChange={onChange}
+        trackColor={{ false: theme.colors.borderStrong, true: theme.colors.accent }}
+        thumbColor={value ? theme.colors.accentContrast : theme.colors.surface}
+        ios_backgroundColor={theme.colors.borderStrong}
+        accessibilityLabel={label}
+      />
     </View>
   );
 }

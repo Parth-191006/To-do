@@ -5,6 +5,7 @@ import { AppState, ScrollView, View } from 'react-native';
 
 import { cancelScheduled, scheduleFocusEnd } from '@/services/notifications/scheduler';
 import { isOpen } from '@/store/selectors';
+import { usePreferences } from '@/store/usePreferences';
 import { useStore } from '@/store/useStore';
 import { useTheme } from '@/theme/ThemeProvider';
 import {
@@ -20,14 +21,11 @@ import {
 import { selection, success, tapLight, warning } from '@/utils/haptics';
 
 import { ProgressRing } from './ProgressRing';
-import { Slider } from './Slider';
+import { TimeWheels } from './TimeWheels';
 import { Chip, ScalePress, Text } from './ui';
 
 const FOCUS_PRESETS = [15, 25, 45, 50];
 const BREAK_PRESETS = [5, 10, 15];
-/** Manual (slider) ranges — every preset sits inside its mode's bounds. */
-const FOCUS_RANGE = { min: 5, max: 90 } as const;
-const BREAK_RANGE = { min: 1, max: 30 } as const;
 
 /** How often a running block re-reads the wall clock. */
 const TICK_MS = 250;
@@ -60,13 +58,13 @@ export function FocusTimer() {
   const setLastOutcome = useStore((s) => s.setLastOutcome);
 
   const [mode, setMode] = useState<Mode>('focus');
-  const [focusMinutes, setFocusMinutes] = useState(25);
-  const [breakMinutes, setBreakMinutes] = useState(5);
+  const [focusMs, setFocusMs] = useState(25 * 60_000);
+  const [breakMs, setBreakMs] = useState(5 * 60_000);
   const [taskId, setTaskId] = useState<string | null>(null);
 
-  const activeMinutes = mode === 'focus' ? focusMinutes : breakMinutes;
-  const lengthColor = mode === 'focus' ? theme.colors.accent : theme.colors.success;
-  const totalMs = activeMinutes * 60_000;
+  const autoStartBreak = usePreferences((s) => s.autoStartBreak);
+  const ringColor = mode === 'focus' ? theme.colors.accent : theme.colors.success;
+  const totalMs = mode === 'focus' ? focusMs : breakMs;
 
   const [clock, setClock] = useState(() => createClock(25 * 60_000));
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -117,6 +115,17 @@ export function FocusTimer() {
     notifyIdRef.current = null;
   }, []);
 
+  /** Schedules the "block is over" alert for a deadline, replacing any pending one. */
+  const scheduleAlert = useCallback(
+    async (deadline: number, label: string) => {
+      clearAlert();
+      notifyIdRef.current = await scheduleFocusEnd(new Date(deadline), taskId, label).catch(
+        () => null,
+      );
+    },
+    [clearAlert, taskId],
+  );
+
   /**
    * Switching length or mode always starts a brand new block. Guarded by a
    * ref so that merely *pausing* — which changes no duration — never resets the
@@ -152,22 +161,39 @@ export function FocusTimer() {
         if (reachedZero) success();
 
         const nextMode: Mode = mode === 'focus' ? 'break' : 'focus';
+        const nextMs = nextMode === 'focus' ? focusMs : breakMs;
+        // This callback owns the mode flip, so it also claims the new
+        // duration — otherwise the duration-change effect below would rebuild
+        // the clock a moment later and wipe an auto-started break.
+        lastTotalRef.current = nextMs;
+        const autoStart = reachedZero && mode === 'focus' && autoStartBreak;
+        const fresh = createClock(nextMs);
+        const nextClock = autoStart ? startClock(fresh, Date.now(), nextMs) : fresh;
         setMode(nextMode);
-        setClock(createClock((nextMode === 'focus' ? focusMinutes : breakMinutes) * 60_000));
+        setClock(nextClock);
         setLastOutcome(
           mode === 'focus'
             ? 'Focus block complete — time for a break'
             : 'Break over — ready for another block?',
         );
+        if (autoStart && nextClock.deadline !== null) {
+          await scheduleAlert(nextClock.deadline, 'Break over — ready for another block?');
+        }
       } finally {
         finishingRef.current = false;
       }
     },
-    [breakMinutes, clock, finishSession, focusMinutes, mode, setLastOutcome],
+    [autoStartBreak, breakMs, clock, finishSession, focusMs, mode, scheduleAlert, setLastOutcome],
   );
 
   const start = useCallback(async () => {
     tapLight();
+    if (totalMs <= 0) {
+      // The wheels can dial in 00:00:00 — never start a block that is
+      // already expired, it would flip the mode the instant it runs.
+      warning();
+      return;
+    }
     const next = startClock(clock, Date.now(), totalMs);
     setClock(next);
 
@@ -189,11 +215,8 @@ export function FocusTimer() {
       }
     }
 
-    clearAlert();
-    notifyIdRef.current = await scheduleFocusEnd(new Date(next.deadline), taskId, label).catch(
-      () => null,
-    );
-  }, [beginFocus, clearAlert, clock, linkedTask, mode, taskId, totalMs]);
+    await scheduleAlert(next.deadline, label);
+  }, [beginFocus, clock, linkedTask, mode, scheduleAlert, taskId, totalMs]);
 
   const pause = useCallback(() => {
     setClock((current) => pauseClock(current, Date.now()));
@@ -247,39 +270,56 @@ export function FocusTimer() {
   return (
     <View style={{ gap: theme.spacing.lg }}>
       <View style={{ alignItems: 'center', gap: theme.spacing.md }}>
-        <ProgressRing
-          progress={progressOf(clock)}
-          size={228}
-          strokeWidth={15}
-          color={mode === 'focus' ? theme.colors.accent : theme.colors.success}
-        >
-          <Text variant="micro" color={mode === 'focus' ? theme.colors.accent : theme.colors.success}>
-            {clock.phase === 'paused' ? 'PAUSED' : mode === 'focus' ? 'FOCUS' : 'BREAK'}
-          </Text>
-          <Text style={{ fontSize: 46, fontWeight: '800', color: theme.colors.textPrimary }}>
-            {clockLabel(remainingMs)}
-          </Text>
-          {linkedTask ? (
-            <Text
-              variant="caption"
-              color={theme.colors.textSecondary}
-              numberOfLines={1}
-              style={{ maxWidth: 150 }}
-            >
-              {linkedTask.title}
-            </Text>
+        <ProgressRing progress={progressOf(clock)} size={228} strokeWidth={15} color={ringColor}>
+          {clock.phase === 'idle' ? (
+            // Before a block starts, the ring itself is the dial: slide
+            // hours / minutes / seconds to set the length by hand — the way
+            // the system Clock app lets you dial in a timer.
+            <TimeWheels
+              valueMs={totalMs}
+              accent={ringColor}
+              onValueChange={(ms) => {
+                tapLight();
+                if (mode === 'focus') setFocusMs(ms);
+                else setBreakMs(ms);
+              }}
+            />
           ) : (
-            <Text variant="caption" color={theme.colors.textTertiary}>
-              {minutesSpent > 0 ? `${minutesSpent} min in` : 'Pick a task below'}
-            </Text>
+            <>
+              <Text variant="micro" color={ringColor}>
+                {clock.phase === 'paused' ? 'PAUSED' : mode === 'focus' ? 'FOCUS' : 'BREAK'}
+              </Text>
+              <Text style={{ fontSize: 46, fontWeight: '800', color: theme.colors.textPrimary }}>
+                {clockLabel(remainingMs)}
+              </Text>
+              {linkedTask ? (
+                <Text
+                  variant="caption"
+                  color={theme.colors.textSecondary}
+                  numberOfLines={1}
+                  style={{ maxWidth: 150 }}
+                >
+                  {linkedTask.title}
+                </Text>
+              ) : (
+                <Text variant="caption" color={theme.colors.textTertiary}>
+                  {minutesSpent > 0 ? `${minutesSpent} min in` : 'Pick a task below'}
+                </Text>
+              )}
+            </>
           )}
         </ProgressRing>
 
         <View style={{ flexDirection: 'row', gap: theme.spacing.sm, alignItems: 'center' }}>
           <ScalePress
             haptic={false}
+            disabled={totalMs <= 0}
             onPress={() => (running ? pause() : void start())}
-            style={{ borderRadius: theme.radii.pill, overflow: 'hidden' }}
+            style={{
+              borderRadius: theme.radii.pill,
+              overflow: 'hidden',
+              opacity: totalMs <= 0 ? 0.45 : 1,
+            }}
           >
             <LinearGradient
               colors={
@@ -332,17 +372,12 @@ export function FocusTimer() {
       </View>
 
       <View style={{ gap: theme.spacing.sm }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-          <Text variant="label" color={theme.colors.textSecondary}>
-            {mode === 'focus' ? 'Focus length' : 'Break length'}
-          </Text>
-          <Text variant="label" color={lengthColor}>
-            {activeMinutes} min
-          </Text>
-        </View>
+        <Text variant="label" color={theme.colors.textSecondary}>
+          {mode === 'focus' ? 'Focus length' : 'Break length'}
+        </Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
           {(mode === 'focus' ? FOCUS_PRESETS : BREAK_PRESETS).map((preset) => {
-            const active = activeMinutes === preset;
+            const active = totalMs === preset * 60_000;
             return (
               <Chip
                 key={preset}
@@ -350,27 +385,13 @@ export function FocusTimer() {
                 selected={active}
                 onPress={() => {
                   selection();
-                  if (mode === 'focus') setFocusMinutes(preset);
-                  else setBreakMinutes(preset);
+                  if (mode === 'focus') setFocusMs(preset * 60_000);
+                  else setBreakMs(preset * 60_000);
                 }}
               />
             );
           })}
         </ScrollView>
-        <Slider
-          value={activeMinutes}
-          min={mode === 'focus' ? FOCUS_RANGE.min : BREAK_RANGE.min}
-          max={mode === 'focus' ? FOCUS_RANGE.max : BREAK_RANGE.max}
-          activeColor={lengthColor}
-          accessibilityLabel={mode === 'focus' ? 'Focus length' : 'Break length'}
-          onValueChange={(minutes) => {
-            // Committing a new length behaves exactly like tapping a preset
-            // chip: it starts a fresh block at the chosen duration.
-            tapLight();
-            if (mode === 'focus') setFocusMinutes(minutes);
-            else setBreakMinutes(minutes);
-          }}
-        />
       </View>
 
       <View style={{ gap: theme.spacing.sm }}>
