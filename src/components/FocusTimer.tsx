@@ -20,10 +20,14 @@ import {
 import { selection, success, tapLight, warning } from '@/utils/haptics';
 
 import { ProgressRing } from './ProgressRing';
+import { Slider } from './Slider';
 import { Chip, ScalePress, Text } from './ui';
 
 const FOCUS_PRESETS = [15, 25, 45, 50];
 const BREAK_PRESETS = [5, 10, 15];
+/** Manual (slider) ranges — every preset sits inside its mode's bounds. */
+const FOCUS_RANGE = { min: 5, max: 90 } as const;
+const BREAK_RANGE = { min: 1, max: 30 } as const;
 
 /** How often a running block re-reads the wall clock. */
 const TICK_MS = 250;
@@ -60,7 +64,9 @@ export function FocusTimer() {
   const [breakMinutes, setBreakMinutes] = useState(5);
   const [taskId, setTaskId] = useState<string | null>(null);
 
-  const totalMs = (mode === 'focus' ? focusMinutes : breakMinutes) * 60_000;
+  const activeMinutes = mode === 'focus' ? focusMinutes : breakMinutes;
+  const lengthColor = mode === 'focus' ? theme.colors.accent : theme.colors.success;
+  const totalMs = activeMinutes * 60_000;
 
   const [clock, setClock] = useState(() => createClock(25 * 60_000));
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -326,12 +332,17 @@ export function FocusTimer() {
       </View>
 
       <View style={{ gap: theme.spacing.sm }}>
-        <Text variant="label" color={theme.colors.textSecondary}>
-          {mode === 'focus' ? 'Focus length' : 'Break length'}
-        </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+          <Text variant="label" color={theme.colors.textSecondary}>
+            {mode === 'focus' ? 'Focus length' : 'Break length'}
+          </Text>
+          <Text variant="label" color={lengthColor}>
+            {activeMinutes} min
+          </Text>
+        </View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
           {(mode === 'focus' ? FOCUS_PRESETS : BREAK_PRESETS).map((preset) => {
-            const active = mode === 'focus' ? focusMinutes === preset : breakMinutes === preset;
+            const active = activeMinutes === preset;
             return (
               <Chip
                 key={preset}
@@ -346,6 +357,20 @@ export function FocusTimer() {
             );
           })}
         </ScrollView>
+        <Slider
+          value={activeMinutes}
+          min={mode === 'focus' ? FOCUS_RANGE.min : BREAK_RANGE.min}
+          max={mode === 'focus' ? FOCUS_RANGE.max : BREAK_RANGE.max}
+          activeColor={lengthColor}
+          accessibilityLabel={mode === 'focus' ? 'Focus length' : 'Break length'}
+          onValueChange={(minutes) => {
+            // Committing a new length behaves exactly like tapping a preset
+            // chip: it starts a fresh block at the chosen duration.
+            tapLight();
+            if (mode === 'focus') setFocusMinutes(minutes);
+            else setBreakMinutes(minutes);
+          }}
+        />
       </View>
 
       <View style={{ gap: theme.spacing.sm }}>
