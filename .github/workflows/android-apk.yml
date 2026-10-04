@@ -148,7 +148,10 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v5
         with:
-          node-version: 22
+          # 24 matches ci.yml and the machine the suite is developed on: the
+          # schema test needs the built-in `node:sqlite`, which on Node 22 is
+          # still behind --experimental-sqlite.
+          node-version: 24
           cache: npm
 
       - name: Install dependencies

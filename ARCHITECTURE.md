@@ -62,7 +62,7 @@ is a replication target, never a dependency on the read path.
 ┌───────────────▼───────────────────────────────▼──────────────────────┐
 │                          PERSISTENCE LAYER                           │
 │  expo-sqlite (WAL)  ⟷  Supabase Postgres (RLS + Realtime)            │
-│  sync_state='pending' rows + sync_outbox → last-write-wins merge      │
+│  sync_state='pending' rows + sync_outbox → per-field merge (field_meta)│
 └──────────────────────────────────────────────────────────────────────┘
                                      ▲
                           OS: notifications, geofences,
@@ -70,9 +70,9 @@ is a replication target, never a dependency on the read path.
 ```
 
 The dependency rule: **UI → store → repositories → SQLite**. Services are
-called *by* the store, never the reverse. The NLP parser and the selectors are
-pure functions with no I/O, which is why they are directly unit-testable (see
-`scripts/verify-nlp.ts`).
+called *by* the store, never the reverse. The NLP parser, the selectors and the
+sync merge are pure functions with no I/O, which is why they are directly
+unit-testable (see [`tests/`](tests)).
 
 ---
 
@@ -119,6 +119,7 @@ user_profiles
 | `position` | real | Manual ordering; fractional so inserts need no re-index |
 | `completed_at` | ISO text | Powers "completed today" and the hourly productivity heat |
 | `deleted_at` | ISO text | **Soft delete** so deletions propagate to collaborators |
+| `field_meta` | JSON | `{ "title": "<ISO>", … }` — one write stamp per column, merged field by field on pull (schema v3) |
 | `sync_state` | text | `synced` · `pending` · `conflict` |
 
 **`projects`** — `name`, `color`, `icon`, `is_archived`, `position`, tombstones.
@@ -126,7 +127,10 @@ user_profiles
 the name hash so re-creating a tag keeps its colour.
 **`task_tags`** — join table. Has no `updated_at`, so tag assignment is the one
 operation captured in `sync_outbox` rather than by row diffing.
-**`habits`** — `cadence` (daily/weekly), `target_per_period`, `by_weekday[]`.
+**`habits`** — `cadence` (daily/weekly), `target_per_period`, `by_weekday[]`,
+plus `reminder_hour` / `reminder_minute` (schema v2) for an optional daily
+reminder. Setting a reminder schedules a repeating notification and records it
+in `notification_records`; clearing it cancels the series.
 **`habit_logs`** — one row per `(habit, local date)`. Stored as a **local**
 `YYYY-MM-DD` key so streaks survive timezone changes; `count` allows multiple
 check-ins per day and shades the heatmap by intensity.
@@ -146,7 +150,11 @@ per day are aggregated straight out of this table.
 
 - `PRAGMA foreign_keys = ON` and `journal_mode = WAL` on every connection.
 - FTS5 mirror table `tasks_fts` kept in sync by `AFTER INSERT/UPDATE/DELETE`
-  triggers.
+  triggers, and actually **queried** by `searchTasks`: `MATCH` with prefix
+  tokens ordered by `rank`, falling back to `LIKE` for one- and two-character
+  input. The query builder strips everything that is not a letter, digit or
+  space and quotes `AND`/`OR`/`NOT`/`NEAR`, because FTS5 reads those as
+  operators and a syntax error would surface as a silently empty result.
 - Completing a parent marks its direct children `done`; deleting a parent
   cascades the **soft** delete down the whole tree (iterative BFS, no recursion
   limit).
@@ -263,7 +271,7 @@ weekday, daily ones to today.
 **Verification.**
 
 ```bash
-npm run verify:nlp     # 15 assertions, runs the real parser via node type-stripping
+npx vitest run tests/nlp.test.ts    # 16 assertions, runs the real parser
 ```
 
 This suite caught three genuine bugs during development: an off-by-one in the
@@ -282,7 +290,7 @@ This suite caught three genuine bugs during development: an off-by-one in the
 | `scheduler.ts` | Owns the Task/Habit → OS-request mapping, urgency routing, snooze primitives |
 | `actions.ts` | Turns an actionable tap into a real domain mutation |
 | `geofence.ts` | Native half: registers geofences, runs the headless task, owns the payload map |
-| `geofenceSync.ts` | Pure re-arm gate: signature of the effective region set, queueing, plan building (covered by `npm run verify:geofence`) |
+| `geofenceSync.ts` | Pure re-arm gate: signature of the effective region set, queueing, plan building (covered by `tests/geofence.test.ts`) |
 
 ### Scheduling pipeline
 
@@ -358,15 +366,33 @@ each tier in system settings without losing the others.
 
 - **Remote** — if `EXPO_PUBLIC_AI_ENDPOINT` is set, `POST`s the task to a
   Supabase Edge Function (or any OpenAI-compatible endpoint) and validates the
-  response, requiring at least three usable steps.
+  response, requiring at least three usable steps. The request carries the
+  Supabase access token when one exists, so the proxy can authenticate and
+  rate-limit the caller. A `REMOTE_TIMEOUT_MS` budget (3.5 s) bounds the wait.
 - **Local fallback** — a keyword-matched template library (report, bug, launch,
   design, presentation, meeting, trip, workout, cleaning, shopping, finance,
-  learning) plus a generic five-step plan. The parent's `estimate_minutes` is
-  distributed across the generated steps by weight.
+  learning) plus a generic five-step plan.
+
+Both engines return the same shape: 3–5 steps, each carrying a title, an
+`estimateMinutes` and a `priority`. Priorities are derived from the parent
+(`deriveStepPriorities`): the first step is at least `medium` — usually the
+parent's own urgency — the last is `low`, so wrap-up never competes with the
+real work. When a remote answer arrives without usable priorities, the same
+function fills them in.
 
 The fallback is not a placeholder: it is what makes "Break down with AI" work
 offline and never a dead end. The result reports `source: 'remote' | 'local'` so
 the UI can be honest about which engine ran.
+
+**The key never ships.** `EXPO_PUBLIC_*` values are compiled into the JS bundle
+and are readable by anyone who unpacks the APK, so a paid model key there would
+be a key that is already spent. The app only knows a URL; the sample proxy in
+[`supabase/functions/ai-breakdown/`](supabase/functions/ai-breakdown/) holds
+the secret behind four layers — Supabase `verify_jwt`, user resolution, a
+per-user per-minute rate limiter (`consume_ai_budget`, service-role only), and
+the server-side key itself. Any non-2xx answer is treated as "no answer" and the
+on-device planner takes over. See
+[`supabase/functions/README.md`](supabase/functions/README.md).
 
 **Voice capture** (`services/ai/transcribe.ts`) records with `expo-audio`. If a
 transcription endpoint is configured the audio is posted and the transcript is
@@ -384,17 +410,56 @@ worse than not transcribing it.
 push   pending rows (sync_state='pending') → upsert to Postgres → mark 'synced'
 push   drain sync_outbox  → non-row ops (set_task_tags), retry with attempts
 pull   SELECT * WHERE updated_at > sync.last_pull_at  (500/page, per table)
-merge  per row: INSERT OR REPLACE, unless the local row is pending AND newer
+merge  tasks: field by field, newest *field* write wins
+        other tables: row-level last-write-wins, pending local copy protected
+insert rows this device has never seen
 ```
 
-Three properties make this safe:
+Four properties make this safe:
 
 1. **Client-generated ids** — an offline create never needs a server round-trip
    to become addressable.
 2. **Soft deletes** — a tombstone (`deleted_at`) replicates; a hard delete would
    let a stale replica resurrect the row.
-3. **Asymmetric last-write-wins** — pending local edits that are newer than the
-   remote row always win, so a pull can never silently discard offline work.
+3. **Pending local work is never discarded** — a local row still waiting to push
+   is never overwritten by an older remote copy.
+4. **Per-field merges** — see below.
+
+### Per-field merge (tasks)
+
+Whole-row last-write-wins is wrong the moment two people edit *different*
+fields of the same task: one renames the title while the other writes notes,
+and whichever row is newer erases the other person's field. Tasks therefore
+carry a small JSON map of stamps, `tasks.field_meta` (schema v3):
+
+```json
+{ "title": "2026-10-04T11:03:22.104Z", "notes": "2026-10-04T11:07:51.880Z" }
+```
+
+- `createTask` stamps every field; `updateTask` re-reads the raw row, computes
+  `changedFields` (loose equality, so `1`/`'1'` and `null`/`undefined` are not
+  changes) and stamps **only** the columns that actually moved.
+- On pull, `mergeRow` compares `localMeta[field]` against `remoteMeta[field]`
+  per column: the newer write wins, a tie goes to the remote side (the other
+  device's write is the newer information). Only `tookRemote` columns are
+  written, and `field_meta` itself is merged with `mergeFieldMeta`.
+- A field with no stamp on either side falls back to the row's `updated_at`, so
+  rows written before schema v3 degrade exactly to the old behaviour rather
+  than to something new.
+
+The rule and its helpers live in
+[`src/services/sync/merge.ts`](src/services/sync/merge.ts) — pure, no SQLite and
+no Supabase — and are pinned by `tests/merge.test.ts`.
+
+`field_meta` is part of the row that is pushed and pulled verbatim (both sides
+`SELECT *`), so Postgres needs the mirrored column from
+[`supabase/migrations/0002_field_meta.sql`](supabase/migrations/0002_field_meta.sql).
+Until it is applied, stamps never survive a round trip and conflicts fall back
+to whole-row LWW for that deployment.
+
+Tables other than `tasks` (projects, tags, habits, focus sessions) still merge
+row-wise: a document either exists or it does not, and there are no
+independent fields worth protecting.
 
 With no Supabase credentials every entry point returns a cheap no-op summary,
 and the app is entirely functional. `pendingChangeCount()` feeds the "unsynced"
@@ -426,6 +491,15 @@ If a paywall is ever reintroduced, the clean insertion point is a single
 - **Palette** — one accent (teal: `#0F766E` light / `#2DD4BF` dark), a small semantic priority ramp, and a
   neutral scale. Light and dark themes are declared side by side so they cannot
   drift.
+- **Brand mark** — `brand` in the same file (`outline` / `face` / `blush`)
+  carries the mascot's colours, and
+  [`scripts/generate-logo.py`](scripts/generate-logo.py) mirrors them so the
+  launcher icon, adaptive foreground/background/monochrome layers, splash,
+  favicon and README banner all render from one source. The in-app twin is
+  [`src/components/BrandMark.tsx`](src/components/BrandMark.tsx), drawn as
+  vectors so it stays sharp at empty-state sizes. `scripts/verify-brand.py`
+  asserts the generated assets (transparent adaptive border, single-colour
+  monochrome silhouette, readable 48 px favicon).
 - **Typography** — nine tokens (`display` → `micro`) with tuned sizes, weights
   and negative tracking for headlines.
 - **Spacing / radii / motion** — a 4pt rhythm, five radii, and a shared spring
@@ -445,10 +519,54 @@ runtime.
 
 | Area | Current | Recommended |
 | --- | --- | --- |
-| Tests | NLP parser (runnable) | Add Jest for selectors, repositories (in-memory SQLite) and the sync merge |
+| Tests | Vitest (`tests/`, 108 assertions): parser, focus clock, habits, schema, geofence, sync merge, FTS | Repository tests against a full fixture database, plus a component/interaction layer |
 | Background sync | Manual + on launch | `expo-background-task` periodic sync |
 | Auth | Anonymous local user | Supabase OTP sign-in already stubbed; wire `signInWithOtp` into onboarding |
-| Conflict display | Last-write-wins | Surface `sync_state='conflict'` rows for manual resolution |
+| Conflict display | Per-field merge for tasks, row-level LWW elsewhere | Surface any remaining `sync_state='conflict'` row for manual resolution |
 | Attachments | URIs stored locally | Upload to Supabase Storage and store the public URL |
 | Charts | Hand-rolled bars | Reconsider a chart lib only if interactivity demands it |
-| Accessibility | Icons have labels | Add a full screen-reader pass and dynamic type scaling |
+| Accessibility | Icons have labels, AA contrast checked | Add a full screen-reader pass and dynamic type scaling |
+| Android widget | Not built (needs a native widget provider) | Glance/AppWidget showing today's tasks + quick add |
+| Drive backup | Export/import + automatic local backup only | Optional Google Drive target behind the same export format |
+
+---
+
+## 12. Data, privacy and permissions
+
+**What stays on the device.** Everything, by default. Tasks, notes, subtasks,
+lists, tags, habits and their logs, focus sessions, voice notes, photo
+attachments, review and template preferences — all in one SQLite file. There is
+no telemetry, no crash reporter, no advertising SDK and no analytics module in
+the dependency tree.
+
+**What is synced.** Only when `EXPO_PUBLIC_SUPABASE_URL` and
+`EXPO_PUBLIC_SUPABASE_ANON_KEY` are set *and* the user signs in: task,
+project, tag, habit and focus-session rows plus the collaboration activity log.
+Attachments stay local (their URIs replicate, not the bytes). Settings → Data
+explains this in the product, and `app/settings.tsx` links to an export so a
+user can see exactly what would leave the device.
+
+**What leaves the device for AI.** Nothing unless `EXPO_PUBLIC_AI_ENDPOINT` is
+configured, and then only the title, notes, estimate and priority of the task
+being broken down. The model key itself lives server-side in
+`supabase/functions/`, never in the binary — see [§7](#7-ai-features).
+
+**Permissions are requested on first use, with an explanation first.**
+Notification, microphone, camera, photo-library, precise location and
+Do-Not-Disturb-bypass requests are all routed through a primer sheet
+(`src/components/PermissionSheet.tsx`) that explains what the feature needs and
+why, before the OS dialog appears. Background location is only requested when
+the first geofenced reminder is created; exact-alarm access when the first
+exact reminder is scheduled; the DND bypass only when a task is actually set to
+urgent. Denial is never fatal — every affected feature degrades to a quieter
+form (a notification that may be delayed, a geofence that is not armed) and
+keeps working.
+
+**App lock** (optional, Settings → Security) engages `expo-local-authentication`
+30 seconds after the app goes to the background. It is a privacy screen, not an
+encryption boundary: the data itself is not re-encrypted on lock.
+
+**Data leaves when the user says so.** Export to JSON or CSV, a copy to another
+app through the system share sheet, an automatic local backup written before
+every destructive action, and restore from either. Nothing is uploaded
+automatically.

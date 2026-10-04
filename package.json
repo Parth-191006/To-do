@@ -1,6 +1,6 @@
 {
   "name": "taskflow",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "main": "expo-router/entry",
   "dependencies": {
     "@expo/vector-icons": "^15.1.1",
@@ -41,9 +41,12 @@
     "zustand": "^5.0.15"
   },
   "devDependencies": {
+    "@types/node": "^26.6.4",
     "@types/react": "~19.2.2",
     "babel-preset-expo": "^57.0.13",
-    "typescript": "~6.0.3"
+    "typescript": "~6.0.3",
+    "vite": "^8.3.2",
+    "vitest": "^5.0.3"
   },
   "scripts": {
     "start": "expo start",
@@ -52,12 +55,10 @@
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
     "lint": "expo lint",
-    "verify:nlp": "node --experimental-strip-types scripts/verify-nlp.ts",
-    "verify:clock": "node --experimental-strip-types scripts/verify-focus-clock.ts",
-    "verify:habits": "node --experimental-strip-types scripts/verify-habits.ts",
-    "verify:schema": "node --experimental-strip-types --experimental-sqlite scripts/verify-schema.ts",
-    "verify:geofence": "node --experimental-strip-types scripts/verify-geofence.ts",
-    "verify": "npm run typecheck && npm run verify:nlp && npm run verify:clock && npm run verify:habits && npm run verify:schema && npm run verify:geofence"
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "verify:brand": "python3 scripts/verify-brand.py",
+    "verify": "npm run typecheck && npm run test"
   },
   "private": true
 }

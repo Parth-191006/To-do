@@ -3,7 +3,7 @@
     "name": "TaskFlow",
     "slug": "taskflow",
     "scheme": "taskflow",
-    "version": "1.2.2",
+    "version": "1.2.3",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -25,7 +25,7 @@
     },
     "android": {
       "package": "com.taskflow.app",
-      "versionCode": 5,
+      "versionCode": 6,
       "adaptiveIcon": {
         "backgroundColor": "#093733",
         "foregroundImage": "./assets/android-icon-foreground.png",

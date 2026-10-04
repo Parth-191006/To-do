@@ -2,12 +2,18 @@
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
     "strict": true,
+    // The suite under `tests/` runs on Node (it opens a real SQLite file through
+    // `node:sqlite`), so the Node globals and the `node:` builtins have to be in
+    // the program. The app itself still only ships Expo/React Native code.
+    "types": ["node"],
     "paths": {
       "@/*": ["./src/*"]
     }
   },
   "include": ["**/*.ts", "**/*.tsx", "expo-env.d.ts"],
-  // `scripts/` holds Node-only tooling (run via `npm run verify:nlp`), which
-  // uses node: builtins and .ts import specifiers the app config doesn't need.
-  "exclude": ["node_modules", "dist", ".expo", "scripts"]
+  // `scripts/` holds Python tooling for the brand assets; the unit tests live in
+  // `tests/` and are typechecked along with the app.
+  // `supabase/` is Deno (edge function + SQL migrations) — it is compiled with
+  // `supabase functions serve`, not by tsc, and `Deno.*` is not a Node global.
+  "exclude": ["node_modules", "dist", ".expo", "scripts", "supabase"]
 }

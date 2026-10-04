@@ -9,12 +9,25 @@
  *
  * Prefix matching is deliberate: the user types one character at a time, and
  * `report*` matches "reports", "reporting" and "reported" while still using the
- * index. Anything FTS5 treats as syntax (quotes, `-`, `*`, `:`, `(` …) is
- * stripped first so a stray character can never make the query throw.
+ * index. Anything that is not a letter, a digit or a space is stripped
+ * first, so a stray character can never make the query throw — a property the
+ * suite proves by running every query this module produces against a real FTS5
+ * index.
  */
 
 /** Shortest query that is worth handing to FTS5; below this we let LIKE scan. */
 export const MIN_FTS_LENGTH = 3;
+
+/**
+ * Words FTS5 reads as operators when they appear in upper case.
+ *
+ * Left bare they either swallow the following `*` (`NEAR*`) or demand an operand
+ * they do not have (`NOT` at the head of a query), which raises a syntax error
+ * — and because the repository answers a caught error with an empty list, a
+ * search for "milk AND eggs" would silently return nothing. Quoting turns each
+ * back into an ordinary term: `"NOT"*` matches the word "not".
+ */
+const FTS5_KEYWORDS = /^(AND|OR|NOT|NEAR)$/;
 
 /**
  * Turns free text into a prefix-matching FTS5 expression.
@@ -27,13 +40,21 @@ export const MIN_FTS_LENGTH = 3;
  */
 export function buildFtsQuery(input: string): string | null {
   const tokens = input
-    // FTS5 syntax characters + quoted phrases are a hazard, not a feature here.
-    .replace(/["'^*:(){}[\]-]/g, ' ')
+    // Only letters, digits and whitespace reach FTS5. Everything else — its own
+    // operators (`"`, `(`, `)`, `:`, `*`, `^`, `-`), apostrophes, emoji, stray
+    // punctuation — becomes whitespace. Verified against real FTS5: a bare `'`
+    // is a syntax error there, so `don't` must become `don* t*` (two tokens that
+    // still match the indexed `don` + `t`) rather than `don't*`, which throws.
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
     .split(/\s+/)
     .filter((token) => token.length > 0);
 
   if (tokens.length === 0) return null;
-  return tokens.map((token) => `${token}*`).join(' ');
+  // Tokens are already letter/digit only, so they can contain `"` — quoting is
+  // always safe here.
+  return tokens
+    .map((token) => (FTS5_KEYWORDS.test(token) ? `"${token}"*` : `${token}*`))
+    .join(' ');
 }
 
 /**

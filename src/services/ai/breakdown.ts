@@ -1,6 +1,7 @@
 import Constants from 'expo-constants';
 
 import type { Priority, TaskWithTags } from '@/domain/types';
+import { getSupabase } from '@/services/supabase/client';
 
 /**
  * "Break down with AI".
@@ -232,6 +233,26 @@ const PRIORITIES: Priority[] = ['none', 'low', 'medium', 'high', 'urgent'];
  */
 export const REMOTE_TIMEOUT_MS = 3500;
 
+/**
+ * The Supabase access token, when there is one.
+ *
+ * The endpoint is a proxy, so it wants to know *who* is asking in order to rate
+ * limit them (see `supabase/functions/ai-breakdown`). Signed out — or with no
+ * backend configured at all — there is no token to send and the request is made
+ * without one: a proxy may legitimately authenticate another way, and a 401
+ * falls through to the local planner anyway.
+ */
+async function readBearerToken(): Promise<string | null> {
+  const supabase = getSupabase();
+  if (!supabase) return null;
+  try {
+    const { data } = await supabase.auth.getSession();
+    return data.session?.access_token ?? null;
+  } catch {
+    return null;
+  }
+}
+
 async function remoteBreakdown(
   task: Pick<TaskWithTags, 'title' | 'notes' | 'estimateMinutes' | 'priority'>,
   options: RemoteOptions,
@@ -248,10 +269,14 @@ async function remoteBreakdown(
   const onAbort = () => controller.abort();
   options.signal?.addEventListener('abort', onAbort);
 
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  const token = await readBearerToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
+
   try {
     const response = await fetch(endpoint, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       signal: controller.signal,
       body: JSON.stringify({
         title: task.title,
