@@ -3,6 +3,7 @@ import { Platform } from 'react-native';
 
 import type { Habit, Priority, Recurrence, TaskWithTags } from '@/domain/types';
 import {
+  cancelNotificationsForHabit,
   cancelNotificationsForTask,
   recordNotification,
   updateNotificationStatus,
@@ -66,7 +67,16 @@ export interface ScheduleResult {
   skippedReason?: string;
 }
 
-/** Ensures we are allowed to post notifications, asking once if needed. */
+/**
+ * Ensures we are allowed to post notifications, asking once if needed.
+ *
+ * `requestedThisSession` guards the in-app explanation: the primer is a UI, and
+ * scheduling runs several times in a session (every save re-arms reminders), so
+ * without it a user who postponed the primer would be asked again on the next
+ * keystroke save. A denial is honoured for the rest of the session.
+ */
+let primerAnswered = false;
+
 export async function ensureNotificationPermissions(): Promise<boolean> {
   const current = await Notifications.getPermissionsAsync();
   if (current.granted) return true;
@@ -75,6 +85,15 @@ export async function ensureNotificationPermissions(): Promise<boolean> {
   // permission feel broken. We ask once from 'undetermined' and otherwise defer
   // to the Settings screen, which can deep-link into the system app settings.
   if (current.status === 'denied' || !current.canAskAgain) return false;
+
+  // Explain before the OS dialog: the system prompt is a one-shot resource.
+  if (!primerAnswered) {
+    const { requestPermissionWithPrimer } = await import('@/store/usePermissionPrompt');
+    const allowed = await requestPermissionWithPrimer('notifications');
+    primerAnswered = true;
+    if (!allowed) return false;
+  }
+
   const next = await Notifications.requestPermissionsAsync({
     ios: {
       allowAlert: true,
@@ -312,8 +331,12 @@ export async function scheduleHabitReminder(
 
   await readyChannels();
 
+  // Replace, never stack: re-arming the same habit twice used to leave two
+  // identical daily nudges in the OS queue.
+  await cancelHabitReminders(habit.id);
+
   const channelId = Platform.OS === 'android' ? 'taskflow-habits' : undefined;
-  await Notifications.scheduleNotificationAsync({
+  const identifier = await Notifications.scheduleNotificationAsync({
     content: {
       title: 'Habit check-in',
       body: `Keep your streak alive — ${habit.name}`,
@@ -328,6 +351,16 @@ export async function scheduleHabitReminder(
       channelId,
     },
   });
+
+  // Mirrored locally so Settings can count it and a re-arm can cancel it by id.
+  await recordNotification({
+    osIdentifier: identifier,
+    habitId: habit.id,
+    kind: 'habit',
+    title: 'Habit check-in',
+    body: `Keep your streak alive — ${habit.name}`,
+    triggerAt: null,
+  });
 }
 
 export async function cancelHabitReminders(habitId: string): Promise<void> {
@@ -338,6 +371,25 @@ export async function cancelHabitReminders(habitId: string): Promise<void> {
       await Notifications.cancelScheduledNotificationAsync(request.identifier);
     }
   }
+  await cancelNotificationsForHabit(habitId);
+}
+
+/**
+ * Re-arms a habit's daily nudge from its stored reminder time.
+ *
+ * The scheduler supported habit reminders from the start, but nothing ever
+ * called it — the functions were dead code and a habit reminder was a feature
+ * the UI could not reach. Every habit write now flows through here.
+ */
+export async function syncHabitReminder(habit: Habit): Promise<void> {
+  if (habit.isArchived || habit.reminderHour === null) {
+    await cancelHabitReminders(habit.id).catch(() => undefined);
+    return;
+  }
+  await scheduleHabitReminder(habit, {
+    hour: habit.reminderHour,
+    minute: habit.reminderMinute ?? 0,
+  }).catch(() => undefined);
 }
 
 /**

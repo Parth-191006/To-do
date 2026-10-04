@@ -7,14 +7,37 @@ import { computeStreak } from '@/db/repositories/habits';
 import type { Habit, HabitLog } from '@/domain/types';
 import { useStore } from '@/store/useStore';
 import { useTheme } from '@/theme/ThemeProvider';
-import { success, tapLight, warning } from '@/utils/haptics';
+import { success, selection, tapLight, warning } from '@/utils/haptics';
 import { toDateKey } from '@/utils/id';
 
-import { EmptyState, Text } from './ui';
+import { Chip, EmptyState, Text } from './ui';
 
 interface HabitTrackerProps {
   onOpenAnalytics?: () => void;
 }
+
+/**
+ * One-tap starters. An empty habit screen asked the user to invent a habit from
+ * nothing; these make the first step a tap instead of a decision.
+ */
+const STARTERS: { name: string; color: string }[] = [
+  { name: 'Drink water', color: '#0EA5E9' },
+  { name: 'Read 10 pages', color: '#F59E0B' },
+  { name: 'Walk 20 min', color: '#10B981' },
+  { name: 'Sleep by 11pm', color: '#A78BFA' },
+];
+
+/** Reminder times offered per habit — cover morning, midday and evening. */
+const REMINDER_PRESETS: { label: string; hour: number }[] = [
+  { label: '7am', hour: 7 },
+  { label: '12pm', hour: 12 },
+  { label: '6pm', hour: 18 },
+  { label: '9pm', hour: 21 },
+];
+
+const WEEKDAY_INITIALS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+/** Spoken names for the single-letter chips — "S" alone is ambiguous. */
+const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 /**
  * Habit tracker with streak counters and a contribution-style heatmap.
@@ -30,8 +53,13 @@ export function HabitTracker({ onOpenAnalytics }: HabitTrackerProps) {
   const addHabit = useStore((s) => s.addHabit);
   const archiveHabit = useStore((s) => s.archiveHabit);
 
+  const setHabitReminder = useStore((s) => s.setHabitReminder);
+  const setHabitWeekdays = useStore((s) => s.setHabitWeekdays);
+
   const [newHabit, setNewHabit] = useState('');
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  /** Which habit has its options (reminder time, weekly target) expanded. */
+  const [optionsFor, setOptionsFor] = useState<string | null>(null);
   const today = toDateKey();
 
   const logsByHabit = useMemo(() => {
@@ -73,10 +101,44 @@ export function HabitTracker({ onOpenAnalytics }: HabitTrackerProps) {
     return (
       <View style={{ gap: theme.spacing.lg }}>
         <HabitComposer value={newHabit} onChange={setNewHabit} onSubmit={addHabit} />
+        <View style={{ gap: theme.spacing.sm }}>
+          <Text variant="label" color={theme.colors.textSecondary}>
+            Or start with one of these
+          </Text>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.sm }}>
+            {STARTERS.map((starter) => (
+              <Pressable
+                key={starter.name}
+                onPress={() => {
+                  selection();
+                  void addHabit(starter.name, starter.color);
+                }}
+                accessibilityRole="button"
+                accessibilityLabel={`Add the habit ${starter.name}`}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 8,
+                  paddingVertical: 10,
+                  paddingHorizontal: 14,
+                  borderRadius: theme.radii.pill,
+                  backgroundColor: theme.colors.surface,
+                  borderWidth: StyleSheet.hairlineWidth,
+                  borderColor: theme.colors.border,
+                }}
+              >
+                <Ionicons name="add-circle-outline" size={15} color={starter.color} />
+                <Text variant="caption" color={theme.colors.textPrimary}>
+                  {starter.name}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
         <EmptyState
           icon="flame-outline"
           title="No habits yet"
-          subtitle="Add a daily habit to start building streaks — the heatmap is waiting."
+          subtitle="Tap a suggestion above, or type your own — streaks and a 5-week heatmap follow automatically."
         />
       </View>
     );
@@ -165,6 +227,104 @@ export function HabitTracker({ onOpenAnalytics }: HabitTrackerProps) {
             </View>
 
             <Heatmap logs={logs} color={habit.color} days={35} />
+
+            {/* Options: a daily nudge time and which days count as target days. */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm }}>
+              <Pressable
+                onPress={() => {
+                  tapLight();
+                  setOptionsFor(optionsFor === habit.id ? null : habit.id);
+                }}
+                hitSlop={8}
+                accessibilityLabel={
+                  optionsFor === habit.id ? 'Hide habit options' : 'Show habit options'
+                }
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 6 }}
+              >
+                <Ionicons
+                  name={habit.reminderHour === null ? 'alarm-outline' : 'alarm'}
+                  size={14}
+                  color={habit.reminderHour === null ? theme.colors.textTertiary : theme.colors.accent}
+                />
+                <Text variant="caption" color={theme.colors.textSecondary}>
+                  {habit.reminderHour === null
+                    ? 'Add reminder'
+                    : `Reminder ${formatReminder(habit.reminderHour, habit.reminderMinute)}`}
+                </Text>
+                <Ionicons
+                  name={optionsFor === habit.id ? 'chevron-up' : 'chevron-down'}
+                  size={13}
+                  color={theme.colors.textTertiary}
+                />
+              </Pressable>
+              <View style={{ flex: 1 }} />
+              <Text variant="micro" color={theme.colors.textTertiary}>
+                {habit.byWeekday.length === 0
+                  ? 'EVERY DAY'
+                  : habit.byWeekday.map((day) => WEEKDAY_INITIALS[day]).join(' ')}
+              </Text>
+            </View>
+
+            {optionsFor === habit.id ? (
+              <View style={{ gap: theme.spacing.sm }}>
+                <View style={{ gap: 6 }}>
+                  <Text variant="micro" color={theme.colors.textTertiary}>
+                    REMINDER TIME
+                  </Text>
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                    <Chip
+                      label="Off"
+                      compact
+                      selected={habit.reminderHour === null}
+                      onPress={() => void setHabitReminder(habit.id, null)}
+                    />
+                    {REMINDER_PRESETS.map((preset) => (
+                      <Chip
+                        key={preset.label}
+                        label={preset.label}
+                        compact
+                        selected={habit.reminderHour === preset.hour}
+                        onPress={() => void setHabitReminder(habit.id, { hour: preset.hour })}
+                      />
+                    ))}
+                  </View>
+                </View>
+
+                <View style={{ gap: 6 }}>
+                  <Text variant="micro" color={theme.colors.textTertiary}>
+                    TARGET DAYS
+                  </Text>
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                    <Chip
+                      label="Every day"
+                      compact
+                      selected={habit.byWeekday.length === 0}
+                      onPress={() => void setHabitWeekdays(habit.id, [])}
+                    />
+                    {WEEKDAY_INITIALS.map((initial, day) => {
+                      // Sundays and Thursdays share the letter S / T — the label
+                      // alone would be ambiguous, hence the accessibility name.
+                      const active = habit.byWeekday.includes(day);
+                      return (
+                        <Chip
+                          key={day}
+                          label={initial}
+                          compact
+                          selected={active}
+                          accessibilityLabel={`${WEEKDAY_NAMES[day]} target`}
+                          onPress={() => {
+                            const next = active
+                              ? habit.byWeekday.filter((entry) => entry !== day)
+                              : [...habit.byWeekday, day].sort((a, b) => a - b);
+                            void setHabitWeekdays(habit.id, next);
+                          }}
+                        />
+                      );
+                    })}
+                  </View>
+                </View>
+              </View>
+            ) : null}
           </View>
         );
       })}
@@ -295,6 +455,13 @@ function Heatmap({ logs, color, days }: { logs: HabitLog[]; color: string; days:
       </View>
     </ScrollView>
   );
+}
+
+/** Formats a stored reminder time for the habit's option row, e.g. `7:00am`. */
+function formatReminder(hour: number, minute: number | null): string {
+  const suffix = hour < 12 ? 'am' : 'pm';
+  const display = hour % 12 === 0 ? 12 : hour % 12;
+  return `${display}:${`${minute ?? 0}`.padStart(2, '0')}${suffix}`;
 }
 
 /** Applies alpha to a #RRGGBB colour so heatmap shading tracks the habit colour. */

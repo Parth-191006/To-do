@@ -90,6 +90,15 @@ export async function cancelNotificationsForTask(taskId: string): Promise<void> 
   );
 }
 
+/** Mirror of {@link cancelNotificationsForTask} for habit nudges. */
+export async function cancelNotificationsForHabit(habitId: string): Promise<void> {
+  const db = await getDatabase();
+  await db.runAsync(
+    "UPDATE notification_records SET status = 'cancelled' WHERE habit_id = ? AND status = 'scheduled'",
+    [habitId],
+  );
+}
+
 export async function markDeliveredByOsIdentifier(osIdentifier: string): Promise<void> {
   const db = await getDatabase();
   await db.runAsync(

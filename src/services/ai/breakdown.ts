@@ -1,6 +1,6 @@
 import Constants from 'expo-constants';
 
-import type { TaskWithTags } from '@/domain/types';
+import type { Priority, TaskWithTags } from '@/domain/types';
 
 /**
  * "Break down with AI".
@@ -19,6 +19,8 @@ import type { TaskWithTags } from '@/domain/types';
 export interface BreakdownStep {
   title: string;
   estimateMinutes: number | null;
+  /** Suggested priority for the subtask — the parent's is only a starting point. */
+  priority: Priority;
 }
 
 export interface BreakdownResult {
@@ -177,11 +179,39 @@ function distributeEstimate(total: number | null, steps: string[]): (number | nu
   return weights.map((weight) => Math.max(5, Math.round((total * weight) / weightTotal)));
 }
 
-export function localBreakdown(task: Pick<TaskWithTags, 'title' | 'notes' | 'estimateMinutes'>): BreakdownResult {
+/**
+ * A plan is a sequence, not a pile of equal chores.
+ *
+ * The first step is the one that unblocks everything else, so it carries the
+ * parent's urgency (never below `medium` — an AI-generated plan whose first
+ * step is "low" is a plan nobody starts). The last step is deliberately `low`
+ * so wrapping up never competes with the real work.
+ */
+export function deriveStepPriorities(
+  parentPriority: Priority,
+  count: number,
+): Priority[] {
+  const RANK: Priority[] = ['none', 'low', 'medium', 'high', 'urgent'];
+  const first = RANK.indexOf(parentPriority) > RANK.indexOf('medium') ? parentPriority : 'medium';
+  return Array.from({ length: count }, (_, index) => {
+    if (index === 0) return first;
+    if (index === count - 1 && count > 2) return 'low';
+    return 'medium';
+  });
+}
+
+export function localBreakdown(
+  task: Pick<TaskWithTags, 'title' | 'notes' | 'estimateMinutes' | 'priority'>,
+): BreakdownResult {
   const steps = pickTemplate(task.title, task.notes).slice(0, 5);
   const estimates = distributeEstimate(task.estimateMinutes, steps);
+  const priorities = deriveStepPriorities(task.priority, steps.length);
   return {
-    steps: steps.map((title, index) => ({ title, estimateMinutes: estimates[index] })),
+    steps: steps.map((title, index) => ({
+      title,
+      estimateMinutes: estimates[index],
+      priority: priorities[index],
+    })),
     source: 'local',
   };
 }
@@ -190,8 +220,20 @@ interface RemoteOptions {
   signal?: AbortSignal;
 }
 
+const PRIORITIES: Priority[] = ['none', 'low', 'medium', 'high', 'urgent'];
+
+/**
+ * How long the remote planner gets before we fall back to the local one.
+ *
+ * Without this, pressing "Break down with AI" on a phone with no connectivity
+ * (or a captive-portal Wi-Fi that swallows requests) left the button spinning
+ * for the OS-level network timeout — up to a minute — even though the offline
+ * planner was ready instantly. The feature must never *need* the network.
+ */
+export const REMOTE_TIMEOUT_MS = 3500;
+
 async function remoteBreakdown(
-  task: Pick<TaskWithTags, 'title' | 'notes' | 'estimateMinutes'>,
+  task: Pick<TaskWithTags, 'title' | 'notes' | 'estimateMinutes' | 'priority'>,
   options: RemoteOptions,
 ): Promise<BreakdownResult | null> {
   const endpoint =
@@ -200,15 +242,22 @@ async function remoteBreakdown(
 
   if (!endpoint) return null;
 
+  // Compose the caller's signal (unmount) with our own timeout budget.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REMOTE_TIMEOUT_MS);
+  const onAbort = () => controller.abort();
+  options.signal?.addEventListener('abort', onAbort);
+
   try {
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      signal: options.signal,
+      signal: controller.signal,
       body: JSON.stringify({
         title: task.title,
         notes: task.notes,
         estimateMinutes: task.estimateMinutes,
+        priority: task.priority,
         maxSteps: 5,
       }),
     });
@@ -217,15 +266,31 @@ async function remoteBreakdown(
     const payload = (await response.json()) as { steps?: unknown };
     if (!Array.isArray(payload.steps)) return null;
 
+    const fallbackPriorities = deriveStepPriorities(task.priority, payload.steps.length);
+
     const steps: BreakdownStep[] = payload.steps
-      .map((entry) => {
-        if (typeof entry === 'string') return { title: entry, estimateMinutes: null };
-        const record = entry as { title?: unknown; estimateMinutes?: unknown };
+      .map((entry, index) => {
+        if (typeof entry === 'string') {
+          return {
+            title: entry,
+            estimateMinutes: null,
+            priority: fallbackPriorities[index] ?? 'medium',
+          };
+        }
+        const record = entry as {
+          title?: unknown;
+          estimateMinutes?: unknown;
+          priority?: unknown;
+        };
         if (typeof record.title !== 'string') return null;
         return {
           title: record.title,
           estimateMinutes:
             typeof record.estimateMinutes === 'number' ? record.estimateMinutes : null,
+          priority:
+            typeof record.priority === 'string' && PRIORITIES.includes(record.priority as Priority)
+              ? (record.priority as Priority)
+              : (fallbackPriorities[index] ?? 'medium'),
         };
       })
       .filter((step): step is BreakdownStep => step !== null)
@@ -234,13 +299,18 @@ async function remoteBreakdown(
     if (steps.length < 3) return null;
     return { steps, source: 'remote' };
   } catch {
+    // Network down, endpoint asleep, or the timeout fired — the local planner
+    // takes over, so the button always produces a plan.
     return null;
+  } finally {
+    clearTimeout(timer);
+    options.signal?.removeEventListener('abort', onAbort);
   }
 }
 
 /** Generates 3–5 subtasks, preferring the remote model and falling back locally. */
 export async function generateBreakdown(
-  task: Pick<TaskWithTags, 'title' | 'notes' | 'estimateMinutes'>,
+  task: Pick<TaskWithTags, 'title' | 'notes' | 'estimateMinutes' | 'priority'>,
   options: RemoteOptions = {},
 ): Promise<BreakdownResult> {
   const remote = await remoteBreakdown(task, options);

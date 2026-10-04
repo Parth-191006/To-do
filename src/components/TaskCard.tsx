@@ -32,6 +32,8 @@ interface TaskCardProps {
   onBreakDown?: (id: string) => void;
   depth?: number;
   compact?: boolean;
+  /** Highlighted as part of a multi-select in the Inbox. */
+  selected?: boolean;
 }
 
 export function formatDueLabel(iso: string | null): string | null {
@@ -62,6 +64,7 @@ export function TaskCard({
   onDelete,
   onBreakDown,
   depth = 0,
+  selected = false,
 }: TaskCardProps) {
   const theme = useTheme();
   const panX = useRef(new Animated.Value(0)).current;
@@ -149,10 +152,18 @@ export function TaskCard({
         {...panResponder.panHandlers}
         style={{
           transform: [{ translateX: panX }],
-          backgroundColor: done ? theme.colors.surfaceSunken : theme.colors.surface,
+          backgroundColor: selected
+            ? theme.colors.accentSoft
+            : done
+              ? theme.colors.surfaceSunken
+              : theme.colors.surface,
           borderRadius: theme.radii.xl,
-          borderWidth: 1,
-          borderColor: overdue ? theme.colors.danger : theme.colors.border,
+          borderWidth: selected ? 2 : 1,
+          borderColor: selected
+            ? theme.colors.accent
+            : overdue
+              ? theme.colors.danger
+              : theme.colors.border,
           overflow: 'hidden',
           shadowColor: theme.colors.shadow,
           shadowOpacity: done ? 0 : 0.08,
@@ -255,6 +266,15 @@ export function TaskCard({
 
               <Confetti ref={confettiRef} />
             </View>
+
+            {task.estimateMinutes ? (
+              <Chip
+                label={`~${task.estimateMinutes}m`}
+                compact
+                icon="hourglass-outline"
+                color={theme.colors.textSecondary}
+              />
+            ) : null}
 
             {progress.total > 0 ? (
               <View

@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AppState, ScrollView, View } from 'react-native';
+import { AppState, Pressable, ScrollView, View } from 'react-native';
 
 import { cancelScheduled, scheduleFocusEnd } from '@/services/notifications/scheduler';
 import { isOpen } from '@/store/selectors';
@@ -20,7 +20,9 @@ import {
 } from '@/utils/focusClock';
 import { selection, success, tapLight, warning } from '@/utils/haptics';
 
+import { BottomSheet } from './BottomSheet';
 import { ProgressRing } from './ProgressRing';
+import { TaskPickerSheet } from './TaskPickerSheet';
 import { TimeWheels } from './TimeWheels';
 import { Chip, ScalePress, Text } from './ui';
 
@@ -38,13 +40,15 @@ type Mode = 'focus' | 'break';
  * The clock itself lives in `@/utils/focusClock`, a pure state machine, so the
  * parts that used to misbehave are unit-testable:
  *
- *  - Pausing keeps your remaining time. The previous implementation reset the
- *    clock to the full duration the moment `running` became false, so "Pause"
- *    behaved like "Restart" and threw away the block.
- *  - Backgrounding no longer freezes the countdown, because remaining time is
- *    derived from a wall-clock deadline rather than a count of interval ticks.
- *  - One focus session row covers the whole block, so pausing does not shatter a
- *    single Pomodoro into several partial sessions in your analytics.
+ *  - Pausing keeps your remaining time (the old build reset the clock).
+ *  - Backgrounding does not freeze the countdown: remaining time is derived
+ *    from a wall-clock deadline, not a count of interval ticks.
+ *  - One focus session row covers the whole block, so pausing does not shatter
+ *    a Pomodoro into several partial sessions in your analytics.
+ *
+ * Layout note: the ring *is* the timer. It shows the time left and sweeps as
+ * the block burns down; dialling an arbitrary length lives behind the "Custom"
+ * chip, so the default view answers "how long have I got?" at a glance.
  */
 export function FocusTimer() {
   const theme = useTheme();
@@ -57,14 +61,29 @@ export function FocusTimer() {
   const toggleTask = useStore((s) => s.toggleTask);
   const setLastOutcome = useStore((s) => s.setLastOutcome);
 
+  const autoStartBreak = usePreferences((s) => s.autoStartBreak);
+  const dailyGoalMinutes = usePreferences((s) => s.dailyGoalMinutes);
+  const longBreakEvery = usePreferences((s) => s.longBreakEvery);
+  const longBreakMinutes = usePreferences((s) => s.longBreakMinutes);
+  const roundsCompleted = usePreferences((s) => s.roundsCompleted);
+  const setRoundsCompleted = usePreferences((s) => s.setRoundsCompleted);
+
   const [mode, setMode] = useState<Mode>('focus');
   const [focusMs, setFocusMs] = useState(25 * 60_000);
   const [breakMs, setBreakMs] = useState(5 * 60_000);
   const [taskId, setTaskId] = useState<string | null>(null);
+  const [customOpen, setCustomOpen] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
-  const autoStartBreak = usePreferences((s) => s.autoStartBreak);
+  /** The *next* break is long when the round counter is about to wrap. */
+  const nextBreakIsLong = useMemo(
+    () => longBreakEvery > 0 && (roundsCompleted + 1) % longBreakEvery === 0,
+    [longBreakEvery, roundsCompleted],
+  );
+  const effectiveBreakMs = nextBreakIsLong ? longBreakMinutes * 60_000 : breakMs;
+
   const ringColor = mode === 'focus' ? theme.colors.accent : theme.colors.success;
-  const totalMs = mode === 'focus' ? focusMs : breakMs;
+  const totalMs = mode === 'focus' ? focusMs : effectiveBreakMs;
 
   const [clock, setClock] = useState(() => createClock(25 * 60_000));
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -79,16 +98,16 @@ export function FocusTimer() {
   const running = clock.phase === 'running';
   const remainingMs = clock.remainingMs;
 
-  const openTasks = useMemo(
-    () => tasks.filter((task) => task.parentId === null && isOpen(task)).slice(0, 20),
-    [tasks],
-  );
-
   const linkedTask = useMemo(() => tasks.find((task) => task.id === taskId) ?? null, [taskId, tasks]);
 
   const selectedProject = useMemo(
     () => projects.find((project) => project.id === linkedTask?.projectId) ?? null,
     [linkedTask?.projectId, projects],
+  );
+
+  const openTaskCount = useMemo(
+    () => tasks.filter((task) => task.parentId === null && isOpen(task)).length,
+    [tasks],
   );
 
   const focusToday = useMemo(() => {
@@ -98,6 +117,8 @@ export function FocusTimer() {
       .filter((session) => session.kind === 'focus' && new Date(session.startedAt) >= start)
       .reduce((total, session) => total + session.durationSeconds, 0);
   }, [focusSessions]);
+
+  const goalRatio = dailyGoalMinutes <= 0 ? 0 : Math.min(1, focusToday / 60 / dailyGoalMinutes);
 
   /** Closes the open focus session with the time actually spent. */
   const finishSession = useCallback(async (completed: boolean, consumedMs: number) => {
@@ -160,8 +181,16 @@ export function FocusTimer() {
         }
         if (reachedZero) success();
 
+        // Only a *finished* focus round counts toward the long-break cycle; a
+        // skipped block still banks its minutes but does not earn a long break.
+        const rounds = reachedZero && mode === 'focus' ? roundsCompleted + 1 : roundsCompleted;
+        if (rounds !== roundsCompleted) setRoundsCompleted(rounds);
+
         const nextMode: Mode = mode === 'focus' ? 'break' : 'focus';
-        const nextMs = nextMode === 'focus' ? focusMs : breakMs;
+        const longBreak = longBreakEvery > 0 && rounds > 0 && rounds % longBreakEvery === 0;
+        const nextMs =
+          nextMode === 'focus' ? focusMs : longBreak ? longBreakMinutes * 60_000 : breakMs;
+
         // This callback owns the mode flip, so it also claims the new
         // duration — otherwise the duration-change effect below would rebuild
         // the clock a moment later and wipe an auto-started break.
@@ -173,7 +202,9 @@ export function FocusTimer() {
         setClock(nextClock);
         setLastOutcome(
           mode === 'focus'
-            ? 'Focus block complete — time for a break'
+            ? longBreak && nextMode === 'break'
+              ? `Round ${rounds} done — take a long break`
+              : 'Focus block complete — time for a break'
             : 'Break over — ready for another block?',
         );
         if (autoStart && nextClock.deadline !== null) {
@@ -183,13 +214,26 @@ export function FocusTimer() {
         finishingRef.current = false;
       }
     },
-    [autoStartBreak, breakMs, clock, finishSession, focusMs, mode, scheduleAlert, setLastOutcome],
+    [
+      autoStartBreak,
+      breakMs,
+      clock,
+      finishSession,
+      focusMs,
+      longBreakEvery,
+      longBreakMinutes,
+      mode,
+      roundsCompleted,
+      scheduleAlert,
+      setLastOutcome,
+      setRoundsCompleted,
+    ],
   );
 
   const start = useCallback(async () => {
     tapLight();
     if (totalMs <= 0) {
-      // The wheels can dial in 00:00:00 — never start a block that is
+      // The custom wheels can dial in 00:00:00 — never start a block that is
       // already expired, it would flip the mode the instant it runs.
       warning();
       return;
@@ -213,10 +257,24 @@ export function FocusTimer() {
         // A failed bookkeeping write must not stop the user's timer.
         warning();
       }
+      if (taskId === null) {
+        // Allowed, but say so — silently counting unattributed minutes is how
+        // the Insights "Unassigned" bar gets mysteriously large.
+        setLastOutcome('No task linked — this block counts as unassigned time');
+      }
     }
 
     await scheduleAlert(next.deadline, label);
-  }, [beginFocus, clock, linkedTask, mode, scheduleAlert, taskId, totalMs]);
+  }, [
+    beginFocus,
+    clock,
+    linkedTask,
+    mode,
+    scheduleAlert,
+    setLastOutcome,
+    taskId,
+    totalMs,
+  ]);
 
   const pause = useCallback(() => {
     setClock((current) => pauseClock(current, Date.now()));
@@ -266,48 +324,41 @@ export function FocusTimer() {
   }, []);
 
   const minutesSpent = Math.floor(elapsedMs(clock) / 60_000);
+  const phaseLabel = clock.phase === 'paused' ? 'PAUSED' : mode === 'focus' ? 'FOCUS' : 'BREAK';
 
   return (
     <View style={{ gap: theme.spacing.lg }}>
+      {/* ------------------------------------------------------------ ring */}
       <View style={{ alignItems: 'center', gap: theme.spacing.md }}>
-        <ProgressRing progress={progressOf(clock)} size={228} strokeWidth={15} color={ringColor}>
-          {clock.phase === 'idle' ? (
-            // Before a block starts, the ring itself is the dial: slide
-            // hours / minutes / seconds to set the length by hand — the way
-            // the system Clock app lets you dial in a timer.
-            <TimeWheels
-              valueMs={totalMs}
-              accent={ringColor}
-              onValueChange={(ms) => {
-                tapLight();
-                if (mode === 'focus') setFocusMs(ms);
-                else setBreakMs(ms);
+        <ProgressRing progress={progressOf(clock)} size={264} strokeWidth={18} color={ringColor}>
+          <View style={{ alignItems: 'center', gap: 4 }}>
+            <Text variant="micro" color={ringColor}>
+              {phaseLabel}
+            </Text>
+            <Text
+              style={{
+                fontSize: 54,
+                fontWeight: '800',
+                color: theme.colors.textPrimary,
+                letterSpacing: -1.5,
+                fontVariant: ['tabular-nums'],
               }}
-            />
-          ) : (
-            <>
-              <Text variant="micro" color={ringColor}>
-                {clock.phase === 'paused' ? 'PAUSED' : mode === 'focus' ? 'FOCUS' : 'BREAK'}
+            >
+              {clockLabel(remainingMs)}
+            </Text>
+            <Text variant="caption" color={theme.colors.textSecondary} numberOfLines={1} style={{ maxWidth: 176 }}>
+              {linkedTask ? linkedTask.title : minutesSpent > 0 ? `${minutesSpent} min in` : 'Nothing selected'}
+            </Text>
+            {clock.phase === 'idle' ? (
+              <Text variant="micro" color={theme.colors.textTertiary}>
+                {mode === 'focus'
+                  ? `ROUND ${roundsCompleted + 1}`
+                  : nextBreakIsLong
+                    ? 'LONG BREAK'
+                    : 'SHORT BREAK'}
               </Text>
-              <Text style={{ fontSize: 46, fontWeight: '800', color: theme.colors.textPrimary }}>
-                {clockLabel(remainingMs)}
-              </Text>
-              {linkedTask ? (
-                <Text
-                  variant="caption"
-                  color={theme.colors.textSecondary}
-                  numberOfLines={1}
-                  style={{ maxWidth: 150 }}
-                >
-                  {linkedTask.title}
-                </Text>
-              ) : (
-                <Text variant="caption" color={theme.colors.textTertiary}>
-                  {minutesSpent > 0 ? `${minutesSpent} min in` : 'Pick a task below'}
-                </Text>
-              )}
-            </>
-          )}
+            ) : null}
+          </View>
         </ProgressRing>
 
         <View style={{ flexDirection: 'row', gap: theme.spacing.sm, alignItems: 'center' }}>
@@ -315,6 +366,7 @@ export function FocusTimer() {
             haptic={false}
             disabled={totalMs <= 0}
             onPress={() => (running ? pause() : void start())}
+            accessibilityLabel={running ? 'Pause the block' : 'Start the block'}
             style={{
               borderRadius: theme.radii.pill,
               overflow: 'hidden',
@@ -333,8 +385,9 @@ export function FocusTimer() {
                 flexDirection: 'row',
                 alignItems: 'center',
                 gap: theme.spacing.sm,
-                paddingVertical: 14,
+                paddingVertical: 15,
                 paddingHorizontal: theme.spacing['2xl'],
+                minHeight: 52,
               }}
             >
               <Ionicons
@@ -351,12 +404,13 @@ export function FocusTimer() {
           <ScalePress
             haptic={false}
             onPress={skip}
+            accessibilityLabel="Skip to the next block"
             style={{
               alignItems: 'center',
               justifyContent: 'center',
-              width: 50,
-              height: 50,
-              borderRadius: 25,
+              width: 52,
+              height: 52,
+              borderRadius: 26,
               backgroundColor: theme.colors.surfaceSunken,
             }}
           >
@@ -371,18 +425,74 @@ export function FocusTimer() {
         ) : null}
       </View>
 
+      {/* -------------------------------------------------- working on task */}
+      <Pressable
+        onPress={() => {
+          tapLight();
+          setPickerOpen(true);
+        }}
+        accessibilityRole="button"
+        accessibilityLabel={
+          linkedTask ? `Working on ${linkedTask.title}. Change task` : 'Choose a task to work on'
+        }
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: theme.spacing.md,
+          backgroundColor: theme.colors.surface,
+          borderRadius: theme.radii.xl,
+          borderWidth: 1,
+          borderColor: linkedTask ? theme.colors.accent : theme.colors.border,
+          padding: theme.spacing.lg,
+          minHeight: 64,
+        }}
+      >
+        <View
+          style={{
+            width: 38,
+            height: 38,
+            borderRadius: 19,
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: theme.colors.accentSoft,
+          }}
+        >
+          <Ionicons name="briefcase-outline" size={18} color={theme.colors.accent} />
+        </View>
+        <View style={{ flex: 1, gap: 2 }}>
+          <Text variant="micro" color={theme.colors.textTertiary}>
+            WORKING ON
+          </Text>
+          <Text variant="bodyStrong" numberOfLines={1}>
+            {linkedTask ? linkedTask.title : 'Choose a task'}
+          </Text>
+          <Text variant="caption" color={theme.colors.textSecondary} numberOfLines={1}>
+            {selectedProject
+              ? `Will log to ${selectedProject.name}`
+              : openTaskCount > 0
+                ? `${openTaskCount} open task${openTaskCount === 1 ? '' : 's'} to pick from`
+                : 'No open tasks yet — time will be unassigned'}
+          </Text>
+        </View>
+        <Ionicons name="chevron-forward" size={18} color={theme.colors.textTertiary} />
+      </Pressable>
+
+      {/* --------------------------------------------------- lengths + cycle */}
       <View style={{ gap: theme.spacing.sm }}>
         <Text variant="label" color={theme.colors.textSecondary}>
-          {mode === 'focus' ? 'Focus length' : 'Break length'}
+          {mode === 'focus' ? 'Focus length' : nextBreakIsLong ? 'Long break length' : 'Break length'}
         </Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
           {(mode === 'focus' ? FOCUS_PRESETS : BREAK_PRESETS).map((preset) => {
-            const active = totalMs === preset * 60_000;
+            const active = mode === 'focus'
+              ? totalMs === preset * 60_000
+              : !nextBreakIsLong && totalMs === preset * 60_000;
             return (
               <Chip
                 key={preset}
                 label={`${preset} min`}
                 selected={active}
+                accessibilityLabel={`Set length to ${preset} minutes`}
                 onPress={() => {
                   selection();
                   if (mode === 'focus') setFocusMs(preset * 60_000);
@@ -391,30 +501,24 @@ export function FocusTimer() {
               />
             );
           })}
+          <Chip
+            label="Custom"
+            icon="options-outline"
+            selected={!(mode === 'focus' ? FOCUS_PRESETS : BREAK_PRESETS).some((preset) =>
+              mode === 'focus' ? totalMs === preset * 60_000 : !nextBreakIsLong && totalMs === preset * 60_000,
+            )}
+            accessibilityLabel="Set a custom length"
+            onPress={() => {
+              selection();
+              setCustomOpen(true);
+            }}
+          />
         </ScrollView>
       </View>
 
-      <View style={{ gap: theme.spacing.sm }}>
-        <Text variant="label" color={theme.colors.textSecondary}>
-          Working on
-        </Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
-          <Chip label="Nothing" selected={taskId === null} onPress={() => setTaskId(null)} />
-          {openTasks.map((task) => (
-            <Chip
-              key={task.id}
-              label={task.title.length > 26 ? `${task.title.slice(0, 24)}…` : task.title}
-              selected={taskId === task.id}
-              onPress={() => setTaskId(task.id)}
-            />
-          ))}
-        </ScrollView>
-      </View>
-
+      {/* ------------------------------------------------ session + goal bar */}
       <View
         style={{
-          flexDirection: 'row',
-          alignItems: 'center',
           gap: theme.spacing.md,
           backgroundColor: theme.colors.surface,
           borderRadius: theme.radii.xl,
@@ -423,31 +527,264 @@ export function FocusTimer() {
           padding: theme.spacing.lg,
         }}
       >
-        <Ionicons name="flame-outline" size={18} color={theme.colors.warning} />
-        <View style={{ flex: 1 }}>
-          <Text variant="bodyStrong">{Math.round(focusToday / 60)} min focused today</Text>
-          <Text variant="caption" color={theme.colors.textSecondary}>
-            {selectedProject ? `Project · ${selectedProject.name}` : 'Pick a task to attribute your time'}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm }}>
+          <Ionicons name="flame-outline" size={17} color={theme.colors.warning} />
+          <Text variant="bodyStrong" style={{ flex: 1 }}>
+            {Math.round(focusToday / 60)} / {dailyGoalMinutes} min focused today
+          </Text>
+          <Text variant="micro" color={theme.colors.textTertiary}>
+            {roundsCompleted} ROUND{roundsCompleted === 1 ? '' : 'S'}
           </Text>
         </View>
-        {linkedTask && linkedTask.status !== 'done' ? (
-          <Chip
-            label="Complete"
-            icon="checkmark"
-            selected
-            onPress={() => {
-              success();
-              void toggleTask(linkedTask.id);
+        <View
+          style={{
+            height: 6,
+            borderRadius: 3,
+            backgroundColor: theme.colors.surfaceSunken,
+            overflow: 'hidden',
+          }}
+        >
+          <View
+            style={{
+              width: `${Math.round(goalRatio * 100)}%`,
+              height: '100%',
+              borderRadius: 3,
+              backgroundColor: theme.colors.accent,
             }}
           />
+        </View>
+        <Text variant="caption" color={theme.colors.textSecondary}>
+          {goalRatio >= 1
+            ? 'Daily goal reached — anything more is a bonus.'
+            : `${Math.max(0, dailyGoalMinutes - Math.round(focusToday / 60))} min to go. ` +
+              (nextBreakIsLong
+                ? `Round ${roundsCompleted + 1} earns a ${longBreakMinutes} min long break.`
+                : `Every ${longBreakEvery} rounds earns a ${longBreakMinutes} min long break.`)}
+        </Text>
+
+        {linkedTask && linkedTask.status !== 'done' ? (
+          <View style={{ flexDirection: 'row' }}>
+            <Chip
+              label="Complete task"
+              icon="checkmark"
+              selected
+              accessibilityLabel={`Mark ${linkedTask.title} complete`}
+              onPress={() => {
+                success();
+                void toggleTask(linkedTask.id);
+              }}
+            />
+          </View>
         ) : null}
       </View>
 
-      {sessionId === null && clock.phase === 'idle' && focusToday === 0 ? (
-        <Text variant="micro" color={theme.colors.textTertiary}>
-          YOUR BLOCK KEEPS RUNNING IN THE BACKGROUND — A NOTIFICATION TELLS YOU WHEN TIME IS UP.
-        </Text>
-      ) : null}
+      <Text variant="caption" color={theme.colors.textSecondary}>
+        Your block keeps running in the background — lock the screen or leave the app and a
+        notification tells you when the time is up.
+      </Text>
+
+      <TaskPickerSheet
+        visible={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        tasks={tasks}
+        projects={projects}
+        selectedId={taskId}
+        onSelect={setTaskId}
+      />
+
+      <CustomLengthSheet
+        visible={customOpen}
+        onClose={() => setCustomOpen(false)}
+        mode={mode}
+        onModeChange={setMode}
+        valueMs={mode === 'focus' ? focusMs : breakMs}
+        onChange={(ms) => {
+          if (mode === 'focus') setFocusMs(ms);
+          else setBreakMs(ms);
+        }}
+        longBreakMinutes={longBreakMinutes}
+        longBreakEvery={longBreakEvery}
+        onLongBreakMinutes={(minutes) => usePreferences.getState().setLongBreakMinutes(minutes)}
+        onLongBreakEvery={(rounds) => usePreferences.getState().setLongBreakEvery(rounds)}
+        dailyGoalMinutes={dailyGoalMinutes}
+        onDailyGoal={(minutes) => usePreferences.getState().setDailyGoalMinutes(minutes)}
+      />
     </View>
+  );
+}
+
+/**
+ * Custom length sheet — the wheel picker from the old design, now opt-in.
+ *
+ * It also hosts the cycle settings (how many rounds earn a long break, how long
+ * that break is, and the daily focus goal) because they are the same kind of
+ * "set it once" decision as a custom duration.
+ */
+function CustomLengthSheet({
+  visible,
+  onClose,
+  mode,
+  onModeChange,
+  valueMs,
+  onChange,
+  longBreakMinutes,
+  longBreakEvery,
+  onLongBreakMinutes,
+  onLongBreakEvery,
+  dailyGoalMinutes,
+  onDailyGoal,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  mode: Mode;
+  onModeChange: (mode: Mode) => void;
+  valueMs: number;
+  onChange: (ms: number) => void;
+  longBreakMinutes: number;
+  longBreakEvery: number;
+  onLongBreakMinutes: (minutes: number) => void;
+  onLongBreakEvery: (rounds: number) => void;
+  dailyGoalMinutes: number;
+  onDailyGoal: (minutes: number) => void;
+}) {
+  const theme = useTheme();
+  const [draft, setDraft] = React.useState(valueMs);
+
+  // Re-seat the wheels each time the sheet opens, so it never shows the value
+  // that was dialled in a previous session.
+  React.useEffect(() => {
+    if (visible) setDraft(valueMs);
+  }, [valueMs, visible]);
+
+  const dirty = draft !== valueMs;
+  const draftLabel = clockLabel(draft);
+
+  return (
+    <BottomSheet
+      visible={visible}
+      onClose={onClose}
+      title="Custom length"
+      subtitle="Slide hours, minutes and seconds — the way the system clock app does."
+      heightRatio={0.86}
+    >
+      <View style={{ gap: theme.spacing.lg, paddingTop: theme.spacing.lg }}>
+        <View style={{ flexDirection: 'row', gap: theme.spacing.sm }}>
+          <Chip
+            label="Focus"
+            selected={mode === 'focus'}
+            accessibilityLabel="Edit the focus length"
+            onPress={() => onModeChange('focus')}
+          />
+          <Chip
+            label="Break"
+            selected={mode === 'break'}
+            accessibilityLabel="Edit the break length"
+            onPress={() => onModeChange('break')}
+          />
+        </View>
+
+        <View
+          style={{
+            alignItems: 'center',
+            paddingVertical: theme.spacing.md,
+            backgroundColor: theme.colors.surfaceSunken,
+            borderRadius: theme.radii.xl,
+          }}
+        >
+          <TimeWheels valueMs={draft} onValueChange={setDraft} />
+          <Text variant="caption" color={theme.colors.textSecondary} style={{ marginTop: 6 }}>
+            {draftLabel} {mode === 'focus' ? 'of focus' : 'of break'}
+          </Text>
+        </View>
+
+        <View style={{ flexDirection: 'row', gap: theme.spacing.sm }}>
+          <Chip
+            label={dirty ? `Save ${draftLabel}` : 'Saved'}
+            icon="checkmark"
+            selected
+            accessibilityLabel="Save the custom length"
+            onPress={() => {
+              if (draft <= 0) {
+                warning();
+                return;
+              }
+              selection();
+              onChange(draft);
+              onClose();
+            }}
+          />
+          <Chip label="Cancel" accessibilityLabel="Cancel" onPress={onClose} />
+        </View>
+
+        <View style={{ gap: theme.spacing.sm }}>
+          <Text variant="label" color={theme.colors.textSecondary}>
+            Long break cycle
+          </Text>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+            {[3, 4, 5].map((rounds) => (
+              <Chip
+                key={rounds}
+                label={`Every ${rounds}`}
+                compact
+                selected={longBreakEvery === rounds}
+                accessibilityLabel={`Long break every ${rounds} rounds`}
+                onPress={() => {
+                  selection();
+                  onLongBreakEvery(rounds);
+                }}
+              />
+            ))}
+            <Chip
+              label="Off"
+              compact
+              selected={longBreakEvery === 0}
+              accessibilityLabel="Turn the long break cycle off"
+              onPress={() => onLongBreakEvery(0)}
+            />
+          </View>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+            {[10, 15, 20, 30].map((minutes) => (
+              <Chip
+                key={minutes}
+                label={`${minutes} min`}
+                compact
+                selected={longBreakMinutes === minutes}
+                accessibilityLabel={`Long break of ${minutes} minutes`}
+                onPress={() => {
+                  selection();
+                  onLongBreakMinutes(minutes);
+                }}
+              />
+            ))}
+          </View>
+        </View>
+
+        <View style={{ gap: theme.spacing.sm }}>
+          <Text variant="label" color={theme.colors.textSecondary}>
+            Daily focus goal
+          </Text>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+            {[30, 60, 90, 120].map((minutes) => (
+              <Chip
+                key={minutes}
+                label={`${minutes}m`}
+                compact
+                selected={dailyGoalMinutes === minutes}
+                accessibilityLabel={`Daily goal of ${minutes} minutes`}
+                onPress={() => {
+                  selection();
+                  onDailyGoal(minutes);
+                }}
+              />
+            ))}
+          </View>
+        </View>
+
+        <Text variant="caption" color={theme.colors.textSecondary}>
+          A block that reaches zero earns a long break every {longBreakEvery || '—'} rounds. Skipping
+          still banks the minutes you actually focused.
+        </Text>
+      </View>
+    </BottomSheet>
   );
 }

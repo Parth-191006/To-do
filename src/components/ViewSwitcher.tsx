@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, View } from 'react-native';
 
 import type { TaskView } from '@/domain/types';
 import { useTheme } from '@/theme/ThemeProvider';
@@ -20,68 +20,73 @@ interface ViewSwitcherProps {
   onChange: (view: TaskView) => void;
 }
 
-/** Segmented control that swaps between the four task layouts. */
+/**
+ * Compact icon-only segmented control that swaps the four task layouts.
+ *
+ * The previous version spelled out LIST / BOARD / AGENDA / MATRIX in uppercase
+ * at 10 px, which cost a full 44 px row on the Today screen and pushed the first
+ * task below the fold on a small phone. The label of the *active* view is kept
+ * as a caption next to it, so the setting is still named — and every icon
+ * carries its name for TalkBack.
+ */
 export function ViewSwitcher({ value, onChange }: ViewSwitcherProps) {
   const theme = useTheme();
+  const active = VIEWS.find((view) => view.key === value) ?? VIEWS[0];
 
   return (
-    <View
-      style={{
-        flexDirection: 'row',
-        backgroundColor: theme.colors.surfaceSunken,
-        borderRadius: theme.radii.pill,
-        padding: 3,
-        gap: 2,
-      }}
-    >
-      {VIEWS.map((view) => {
-        const active = view.key === value;
-        return (
-          <Pressable
-            key={view.key}
-            onPress={() => {
-              selection();
-              onChange(view.key);
-            }}
-            style={{
-              flex: 1,
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 5,
-              paddingVertical: 7,
-              borderRadius: theme.radii.pill,
-              backgroundColor: active ? theme.colors.surface : 'transparent',
-              ...(active
-                ? {
-                    shadowColor: theme.colors.shadow,
-                    shadowOpacity: 0.16,
-                    shadowRadius: 6,
-                    shadowOffset: { width: 0, height: 2 },
-                    elevation: 1,
-                  }
-                : null),
-            }}
-          >
-            <Ionicons
-              name={view.icon}
-              size={14}
-              color={active ? theme.colors.accent : theme.colors.textTertiary}
-            />
-            <Text
-              variant="micro"
-              color={active ? theme.colors.textPrimary : theme.colors.textTertiary}
-              style={styles.label}
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm }}>
+      <View
+        style={{
+          flexDirection: 'row',
+          backgroundColor: theme.colors.surfaceSunken,
+          borderRadius: theme.radii.pill,
+          padding: 3,
+          gap: 2,
+        }}
+      >
+        {VIEWS.map((view) => {
+          const selected = view.key === value;
+          return (
+            <Pressable
+              key={view.key}
+              onPress={() => {
+                selection();
+                onChange(view.key);
+              }}
+              hitSlop={10}
+              accessibilityRole="button"
+              accessibilityLabel={`${view.label} view`}
+              accessibilityState={{ selected }}
+              style={{
+                width: 44,
+                height: 36,
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderRadius: theme.radii.pill,
+                backgroundColor: selected ? theme.colors.surface : 'transparent',
+                ...(selected
+                  ? {
+                      shadowColor: theme.colors.shadow,
+                      shadowOpacity: 0.16,
+                      shadowRadius: 6,
+                      shadowOffset: { width: 0, height: 2 },
+                      elevation: 1,
+                    }
+                  : null),
+              }}
             >
-              {view.label}
-            </Text>
-          </Pressable>
-        );
-      })}
+              <Ionicons
+                name={view.icon}
+                size={17}
+                color={selected ? theme.colors.accent : theme.colors.textTertiary}
+              />
+            </Pressable>
+          );
+        })}
+      </View>
+      <Text variant="micro" color={theme.colors.textTertiary} numberOfLines={1}>
+        {active.label.toUpperCase()}
+      </Text>
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  label: { textTransform: 'uppercase' },
-});

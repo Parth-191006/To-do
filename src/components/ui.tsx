@@ -1,6 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import React, { useCallback, useRef } from 'react';
+
+import { BrandMark } from './BrandMark';
 import {
   Animated,
   Pressable,
@@ -92,6 +94,8 @@ interface ChipProps {
   onPress?: () => void;
   onLongPress?: () => void;
   compact?: boolean;
+  /** Spoken label when the visible text alone is ambiguous (e.g. "S", "M"). */
+  accessibilityLabel?: string;
 }
 
 export function Chip({
@@ -102,6 +106,7 @@ export function Chip({
   onPress,
   onLongPress,
   compact = false,
+  accessibilityLabel,
 }: ChipProps) {
   const theme = useTheme();
   const accent = color ?? theme.colors.accent;
@@ -113,8 +118,11 @@ export function Chip({
         flexDirection: 'row',
         alignItems: 'center',
         gap: 6,
-        paddingVertical: compact ? 3 : 6,
-        paddingHorizontal: compact ? 8 : 11,
+        // 48dp is the Android touch-target floor; a compact chip is a visual
+        // size, so the padding keeps the tappable box big enough either way.
+        minHeight: compact ? 32 : 34,
+        paddingVertical: compact ? 5 : 7,
+        paddingHorizontal: compact ? 9 : 12,
         borderRadius: theme.radii.pill,
         backgroundColor: selected ? background : theme.colors.surfaceSunken,
         borderWidth: StyleSheet.hairlineWidth,
@@ -141,7 +149,14 @@ export function Chip({
   if (!onPress && !onLongPress) return content;
 
   return (
-    <Pressable onPress={onPress} onLongPress={onLongPress} hitSlop={6}>
+    <Pressable
+      onPress={onPress}
+      onLongPress={onLongPress}
+      hitSlop={8}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel ?? label}
+      accessibilityState={{ selected }}
+    >
       {content}
     </Pressable>
   );
@@ -178,31 +193,57 @@ export function Divider({ inset = 0 }: { inset?: number }) {
 /* -------------------------------------------------------------------------- */
 
 interface EmptyStateProps {
+  /** Small badge shown on the mascot, so the screen still names its topic. */
   icon?: keyof typeof Ionicons.glyphMap;
   title: string;
   subtitle?: string;
   action?: { label: string; onPress: () => void };
+  /** Extra controls under the copy — e.g. example tasks that add themselves. */
+  children?: React.ReactNode;
+  /** `false` for the compact boards, where the full mascot is too loud. */
+  showMark?: boolean;
 }
 
-export function EmptyState({ icon = 'sparkles-outline', title, subtitle, action }: EmptyStateProps) {
+/**
+ * Celebrates "nothing to do here" with the app's own mascot instead of a
+ * generic icon in a circle: the character that appears on the launcher is the
+ * same one that greets an empty day.
+ */
+export function EmptyState({
+  icon = 'sparkles-outline',
+  title,
+  subtitle,
+  action,
+  children,
+  showMark = true,
+}: EmptyStateProps) {
   const theme = useTheme();
   return (
-    <View style={{ alignItems: 'center', paddingVertical: theme.spacing['2xl'], gap: theme.spacing.sm }}>
-      <LinearGradient
-        colors={theme.colors.accentGradient}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={{
-          width: 60,
-          height: 60,
-          borderRadius: 30,
-          alignItems: 'center',
-          justifyContent: 'center',
-          marginBottom: theme.spacing.xs,
-        }}
-      >
-        <Ionicons name={icon} size={27} color={theme.colors.accentContrast} />
-      </LinearGradient>
+    <View
+      style={{ alignItems: 'center', paddingVertical: theme.spacing['2xl'], gap: theme.spacing.sm }}
+    >
+      {showMark ? (
+        <View style={{ marginBottom: theme.spacing.xs }}>
+          <BrandMark size={72} />
+          <View
+            style={{
+              position: 'absolute',
+              right: -4,
+              bottom: -4,
+              width: 26,
+              height: 26,
+              borderRadius: 13,
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: theme.colors.surface,
+              borderWidth: 1,
+              borderColor: theme.colors.border,
+            }}
+          >
+            <Ionicons name={icon} size={14} color={theme.colors.textSecondary} />
+          </View>
+        </View>
+      ) : null}
       <Text variant="heading" align="center">
         {title}
       </Text>
@@ -212,6 +253,7 @@ export function EmptyState({ icon = 'sparkles-outline', title, subtitle, action 
         </Text>
       ) : null}
       {action ? <Chip label={action.label} selected onPress={action.onPress} /> : null}
+      {children}
     </View>
   );
 }

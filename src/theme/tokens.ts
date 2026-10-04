@@ -76,6 +76,23 @@ export const palette = {
 } as const;
 
 /**
+ * Fixed colours belonging to the mascot itself (the smiling check).
+ *
+ * These are intentionally outside the light/dark ramps: the launcher icon and
+ * the splash cannot follow a theme, so the character keeps one identity
+ * everywhere. `scripts/generate-logo.py` mirrors these exact values — change
+ * one and re-run the generator.
+ */
+export const brand = {
+  /** Thick soft outline around the tick. */
+  outline: '#062A27',
+  /** Eyes and smile. */
+  face: '#07332F',
+  /** Cheeks, drawn at low alpha. */
+  blush: '#FB7185',
+} as const;
+
+/**
  * Colours offered in the tag / project / habit colour picker.
  * Brand teal leads; index 5 stays amber because recurrence chips address
  * `swatches[5]` directly.
@@ -162,8 +179,10 @@ export const lightColors: ThemeColors = {
   border: '#E2ECEA',
   borderStrong: '#C7D7D4',
   textPrimary: '#111827',
-  textSecondary: '#5A6478',
-  textTertiary: '#8A93A6',
+  textSecondary: '#4B5566',
+  // Tertiary sits on white and near-white surfaces, so it has to clear 4.5:1
+  // there too: #8A93A6 measured ~2.9:1 and failed WCAG AA.
+  textTertiary: '#5F6A7D',
   textInverse: palette.white,
   // Teal-700: passes AA as small text on white *and* under white text.
   accent: palette.teal700,
@@ -239,15 +258,23 @@ export const darkColors: ThemeColors = {
   shadow: 'rgba(0, 0, 0, 0.55)',
 };
 
+/**
+ * Type scale.
+ *
+ * `micro` is the all-caps workhorse (DUE TODAY, OVERDUE, BOARD…). It used to be
+ * 10 px, which is below the 12 sp floor Android's own guidelines set for
+ * supporting text — and it carries real information on this app's headers, so
+ * it was raised to 11 px with a little more tracking instead of staying tiny.
+ */
 export const typography = {
   display: { fontSize: 32, fontWeight: '800' as const, letterSpacing: -0.8 },
   title: { fontSize: 22, fontWeight: '700' as const, letterSpacing: -0.4 },
   heading: { fontSize: 17, fontWeight: '700' as const, letterSpacing: -0.2 },
   body: { fontSize: 15, fontWeight: '500' as const, letterSpacing: -0.1 },
   bodyStrong: { fontSize: 15, fontWeight: '700' as const, letterSpacing: -0.1 },
-  label: { fontSize: 13, fontWeight: '600' as const },
-  caption: { fontSize: 12, fontWeight: '500' as const },
-  micro: { fontSize: 10, fontWeight: '700' as const, letterSpacing: 0.6 },
+  label: { fontSize: 14, fontWeight: '600' as const },
+  caption: { fontSize: 12.5, fontWeight: '500' as const },
+  micro: { fontSize: 11, fontWeight: '700' as const, letterSpacing: 0.8 },
 } as const;
 
 export type TypographyToken = keyof typeof typography;

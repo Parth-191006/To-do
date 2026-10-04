@@ -113,6 +113,9 @@ export interface Habit {
   cadence: 'daily' | 'weekly';
   /** 0 = Sunday … 6 = Saturday. Empty = every day. */
   byWeekday: number[];
+  /** Local-time daily nudge (24h clock); null when the habit has no reminder. */
+  reminderHour: number | null;
+  reminderMinute: number | null;
   isArchived: boolean;
   createdAt: string;
   updatedAt: string;

@@ -7,6 +7,7 @@ import { ActivityIndicator, Pressable, StyleSheet, TextInput, View } from 'react
 import type { Attachment } from '@/domain/types';
 import { parseTaskInput } from '@/nlp/parser';
 import { isTranscriptionAvailable, transcribeAudioFile } from '@/services/ai/transcribe';
+import { requestPermissionWithPrimer } from '@/store/usePermissionPrompt';
 import { useTheme } from '@/theme/ThemeProvider';
 import { createId } from '@/utils/id';
 import { selection, tapLight, warning } from '@/utils/haptics';
@@ -68,18 +69,33 @@ export function SmartInput({ onSubmit, label = 'Quick add', autoFocus = false, h
     }
   }, [attachments, busy, hasContent, onSubmit, reset, value]);
 
-  const handlePickImage = useCallback(async () => {
+  const handlePickImage = useCallback(async (source: 'library' | 'camera' = 'library') => {
     tapLight();
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      setStatusNote('Photo access is off — enable it in Settings to attach images.');
-      return;
+    // Explain first — the OS dialog only appears once per install.
+    const explained = await requestPermissionWithPrimer('photos');
+    if (!explained) return;
+
+    if (source === 'camera') {
+      const cameraPermission = await ImagePicker.requestCameraPermissionsAsync();
+      if (!cameraPermission.granted) {
+        setStatusNote('Camera access is off — enable it in Settings to snap a photo.');
+        return;
+      }
+    } else {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        setStatusNote('Photo access is off — enable it in Settings to attach images.');
+        return;
+      }
     }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      quality: 0.7,
-      allowsMultipleSelection: false,
-    });
+    const result =
+      source === 'camera'
+        ? await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.7 })
+        : await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ['images'],
+            quality: 0.7,
+            allowsMultipleSelection: false,
+          });
     if (result.canceled || result.assets.length === 0) return;
     const asset = result.assets[0];
     setAttachments((current) => [
@@ -132,6 +148,11 @@ export function SmartInput({ onSubmit, label = 'Quick add', autoFocus = false, h
       await stopRecording();
       return;
     }
+    const explained = await requestPermissionWithPrimer('microphone');
+    if (!explained) {
+      warning();
+      return;
+    }
     const permission = await AudioModule.requestRecordingPermissionsAsync();
     if (!permission.granted) {
       warning();
@@ -174,70 +195,11 @@ export function SmartInput({ onSubmit, label = 'Quick add', autoFocus = false, h
         </Text>
       </View>
 
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm }}>
-        <TextInput
-          value={value}
-          onChangeText={setValue}
-          // Intentionally no placeholder: the card is already labelled.
-          autoFocus={autoFocus}
-          multiline
-          returnKeyType="done"
-          // Without this, Return inserts a newline on Android instead of
-          // submitting, and the task is never added.
-          submitBehavior="submit"
-          onSubmitEditing={handleSubmit}
-          accessibilityLabel={label}
-          style={[
-            theme.typography.body,
-            { flex: 1, color: theme.colors.textPrimary, paddingVertical: 6, minHeight: 38, maxHeight: 120 },
-          ]}
-        />
-
-        <ScalePress
-          onPress={handleSubmit}
-          disabled={!hasContent || busy}
-          accessibilityLabel="Save task"
-          style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            gap: 6,
-            paddingVertical: 9,
-            paddingHorizontal: hasContent ? 14 : 11,
-            borderRadius: theme.radii.pill,
-            backgroundColor: hasContent ? theme.colors.accent : theme.colors.surfaceSunken,
-          }}
-        >
-          {busy ? (
-            <ActivityIndicator size="small" color={theme.colors.accentContrast} />
-          ) : (
-            <>
-              {hasContent ? (
-                <Text variant="caption" color={theme.colors.accentContrast} style={{ fontWeight: '700' }}>
-                  Add
-                </Text>
-              ) : null}
-              <Ionicons
-                name="arrow-up"
-                size={16}
-                color={hasContent ? theme.colors.accentContrast : theme.colors.textTertiary}
-              />
-            </>
-          )}
-        </ScalePress>
-      </View>
-
-      {/* Named controls — a bare mic and photo icon made the user guess. */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm }}>
-        <ActionPill
-          icon={recording ? 'stop-circle' : 'mic-outline'}
-          label={recording ? 'Stop' : 'Voice note'}
-          active={recording}
-          onPress={toggleRecording}
-        />
-        <ActionPill icon="image-outline" label="Photo" onPress={handlePickImage} />
-      </View>
-
-      {/* Live parse preview — the heart of the smart input. */}
+      {/*
+        Live parse preview — the heart of the smart input, and deliberately
+        *above* the field: the chips are the answer to "did it understand me?",
+        so they belong between the eye and the keyboard, not underneath it.
+      */}
       {parsed.tokens.length > 0 ? (
         <View style={{ gap: 6 }}>
           <Text variant="micro" color={theme.colors.textTertiary}>
@@ -256,6 +218,70 @@ export function SmartInput({ onSubmit, label = 'Quick add', autoFocus = false, h
           </View>
         </View>
       ) : null}
+
+      <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: theme.spacing.sm }}>
+        <TextInput
+          value={value}
+          onChangeText={setValue}
+          // Intentionally no placeholder: the card is already labelled.
+          autoFocus={autoFocus}
+          multiline
+          returnKeyType="done"
+          // Without this, Return inserts a newline on Android instead of
+          // submitting, and the task is never added.
+          submitBehavior="submit"
+          onSubmitEditing={handleSubmit}
+          accessibilityLabel={label}
+          style={[
+            theme.typography.body,
+            { flex: 1, color: theme.colors.textPrimary, paddingVertical: 8, minHeight: 44, maxHeight: 120 },
+          ]}
+        />
+
+        {/* Voice + camera sit inline with the field: one row, no hunting. */}
+        <IconAction
+          icon={recording ? 'stop' : 'mic-outline'}
+          label={recording ? 'Stop recording' : 'Record a voice note'}
+          active={recording}
+          onPress={() => void toggleRecording()}
+        />
+        <IconAction
+          icon="camera-outline"
+          label="Take a photo"
+          onPress={() => void handlePickImage('camera')}
+        />
+        <IconAction
+          icon="images-outline"
+          label="Attach a photo from your library"
+          onPress={() => void handlePickImage('library')}
+        />
+
+        <ScalePress
+          onPress={handleSubmit}
+          disabled={!hasContent || busy}
+          accessibilityLabel={hasContent ? 'Add task' : 'Add task — type something first'}
+          accessibilityState={{ disabled: !hasContent || busy }}
+          style={{
+            width: 44,
+            height: 44,
+            alignItems: 'center',
+            justifyContent: 'center',
+            borderRadius: theme.radii.pill,
+            // Enabled state is the accent, not a grey that reads as disabled.
+            backgroundColor: hasContent ? theme.colors.accent : theme.colors.surfaceSunken,
+          }}
+        >
+          {busy ? (
+            <ActivityIndicator size="small" color={theme.colors.accentContrast} />
+          ) : (
+            <Ionicons
+              name="arrow-up"
+              size={19}
+              color={hasContent ? theme.colors.accentContrast : theme.colors.textTertiary}
+            />
+          )}
+        </ScalePress>
+      </View>
 
       {attachments.length > 0 ? (
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
@@ -280,8 +306,12 @@ export function SmartInput({ onSubmit, label = 'Quick add', autoFocus = false, h
   );
 }
 
-/** Small named button used for the capture extras. */
-function ActionPill({
+/**
+ * Round icon button used for the capture extras. 44dp square with padding, so
+ * it clears the 48dp touch target with `hitSlop` while staying inline with the
+ * text field.
+ */
+function IconAction({
   icon,
   label,
   onPress,
@@ -297,24 +327,21 @@ function ActionPill({
   return (
     <Pressable
       onPress={onPress}
-      hitSlop={6}
+      hitSlop={12}
+      accessibilityRole="button"
       accessibilityLabel={label}
       style={{
-        flexDirection: 'row',
+        width: 44,
+        height: 44,
         alignItems: 'center',
-        gap: 6,
-        paddingVertical: 7,
-        paddingHorizontal: 12,
+        justifyContent: 'center',
         borderRadius: theme.radii.pill,
         backgroundColor: active ? theme.colors.dangerSoft : theme.colors.surfaceSunken,
         borderWidth: StyleSheet.hairlineWidth,
         borderColor: active ? theme.colors.danger : theme.colors.border,
       }}
     >
-      <Ionicons name={icon} size={15} color={tint} />
-      <Text variant="caption" color={tint} style={{ fontWeight: '600' }}>
-        {label}
-      </Text>
+      <Ionicons name={icon} size={18} color={tint} />
     </Pressable>
   );
 }

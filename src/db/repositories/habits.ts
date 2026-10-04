@@ -20,6 +20,8 @@ export async function createHabit(input: {
   cadence?: 'daily' | 'weekly';
   targetPerPeriod?: number;
   byWeekday?: number[];
+  reminderHour?: number | null;
+  reminderMinute?: number | null;
 }): Promise<Habit> {
   const db = await getDatabase();
   const now = nowIso();
@@ -31,6 +33,8 @@ export async function createHabit(input: {
     cadence: input.cadence ?? 'daily',
     targetPerPeriod: input.targetPerPeriod ?? 1,
     byWeekday: input.byWeekday ?? [],
+    reminderHour: input.reminderHour ?? null,
+    reminderMinute: input.reminderMinute ?? null,
     isArchived: false,
     createdAt: now,
     updatedAt: now,
@@ -39,8 +43,8 @@ export async function createHabit(input: {
 
   await db.runAsync(
     `INSERT INTO habits (id, name, color, icon, target_per_period, cadence, by_weekday,
-       is_archived, created_at, updated_at, sync_state)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 'pending')`,
+       reminder_hour, reminder_minute, is_archived, created_at, updated_at, sync_state)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 'pending')`,
     [
       habit.id,
       habit.name,
@@ -49,6 +53,8 @@ export async function createHabit(input: {
       habit.targetPerPeriod,
       habit.cadence,
       JSON.stringify(habit.byWeekday),
+      habit.reminderHour,
+      habit.reminderMinute,
       habit.createdAt,
       habit.updatedAt,
     ],
@@ -59,7 +65,20 @@ export async function createHabit(input: {
 
 export async function updateHabit(
   id: string,
-  patch: Partial<Pick<Habit, 'name' | 'color' | 'icon' | 'cadence' | 'targetPerPeriod' | 'byWeekday' | 'isArchived'>>,
+  patch: Partial<
+    Pick<
+      Habit,
+      | 'name'
+      | 'color'
+      | 'icon'
+      | 'cadence'
+      | 'targetPerPeriod'
+      | 'byWeekday'
+      | 'reminderHour'
+      | 'reminderMinute'
+      | 'isArchived'
+    >
+  >,
 ): Promise<void> {
   const db = await getDatabase();
   const row = await db.getFirstAsync<Parameters<typeof toHabit>[0]>('SELECT * FROM habits WHERE id = ?', [id]);
@@ -68,7 +87,8 @@ export async function updateHabit(
 
   await db.runAsync(
     `UPDATE habits SET name = ?, color = ?, icon = ?, target_per_period = ?, cadence = ?,
-       by_weekday = ?, is_archived = ?, updated_at = ?, sync_state = 'pending' WHERE id = ?`,
+       by_weekday = ?, reminder_hour = ?, reminder_minute = ?, is_archived = ?, updated_at = ?,
+       sync_state = 'pending' WHERE id = ?`,
     [
       merged.name,
       merged.color,
@@ -76,6 +96,8 @@ export async function updateHabit(
       merged.targetPerPeriod,
       merged.cadence,
       JSON.stringify(merged.byWeekday),
+      merged.reminderHour,
+      merged.reminderMinute,
       merged.isArchived ? 1 : 0,
       nowIso(),
       id,

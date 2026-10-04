@@ -62,6 +62,13 @@ TaskManager.defineTask(GEOFENCE_TASK, async ({ data, error }) => {
 });
 
 export async function requestLocationPermissions(): Promise<boolean> {
+  // Ask the user first, in our own words. Background location is a scary OS
+  // dialog; arriving at it with no context is what makes people deny it — and
+  // a denial cannot be re-asked from the app.
+  const { requestPermissionWithPrimer } = await import('@/store/usePermissionPrompt');
+  const explained = await requestPermissionWithPrimer('location');
+  if (!explained) return false;
+
   const foreground = await Location.requestForegroundPermissionsAsync();
   if (!foreground.granted) return false;
   // Geofencing keeps working in the background, which iOS grants separately.

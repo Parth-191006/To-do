@@ -133,6 +133,9 @@ export function toHabit(row: {
   target_per_period: number;
   cadence: string;
   by_weekday: string;
+  /** Added in schema v2 — optional, so old rows simply come back null. */
+  reminder_hour?: number | null;
+  reminder_minute?: number | null;
   is_archived: number;
   created_at: string;
   updated_at: string;
@@ -146,6 +149,8 @@ export function toHabit(row: {
     targetPerPeriod: row.target_per_period,
     cadence: row.cadence === 'weekly' ? 'weekly' : 'daily',
     byWeekday: parseJson<number[]>(row.by_weekday, []),
+    reminderHour: row.reminder_hour ?? null,
+    reminderMinute: row.reminder_minute ?? null,
     isArchived: row.is_archived === 1,
     createdAt: row.created_at,
     updatedAt: row.updated_at,

@@ -1,8 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import React, { useCallback, useMemo, useState } from 'react';
-import { Animated, Pressable, ScrollView, View } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Animated, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import type { TaskStatus, TaskWithTags } from '@/domain/types';
 import {
@@ -15,13 +15,14 @@ import {
 } from '@/store/selectors';
 import { useStore } from '@/store/useStore';
 import { useTheme } from '@/theme/ThemeProvider';
-import { selection, tapHeavy, tapLight } from '@/utils/haptics';
+import { selection, success, tapHeavy, tapLight } from '@/utils/haptics';
 
+import { Confetti, type ConfettiHandle } from './Confetti';
 import { ProjectSheet } from './ProjectSheet';
 import { SmartInput } from './SmartInput';
 import { TaskCard } from './TaskCard';
 import { ViewSwitcher } from './ViewSwitcher';
-import { EmptyState, ScalePress, Text } from './ui';
+import { Chip, EmptyState, ScalePress, Text } from './ui';
 import { CalendarAgenda } from './views/CalendarAgenda';
 import { EisenhowerMatrix } from './views/EisenhowerMatrix';
 import { KanbanBoard } from './views/KanbanBoard';
@@ -32,6 +33,17 @@ function greeting(now = new Date()): string {
   if (hour < 18) return 'Good afternoon';
   return 'Good evening';
 }
+
+/**
+ * Examples that teach the capture syntax by doing it. Tapping one adds it, so
+ * "how does the natural-language input work?" is answered by the empty state
+ * itself rather than by a paragraph of instructions.
+ */
+const EXAMPLES: { label: string; value: string; icon: keyof typeof Ionicons.glyphMap }[] = [
+  { label: 'Review designs tomorrow 4pm', value: 'Review designs tomorrow 4pm #work !high ~45m', icon: 'calendar-outline' },
+  { label: 'Call the dentist every month', value: 'Call the dentist every month !medium', icon: 'repeat-outline' },
+  { label: 'Buy milk when I reach the shop', value: 'Buy groceries tomorrow 6pm #errands ~30m', icon: 'pricetags-outline' },
+];
 
 /** A slice of the day, ordered the way the list below is ordered. */
 interface TaskSection {
@@ -58,11 +70,17 @@ export function TaskDashboard() {
   const addTaskFromInput = useStore((s) => s.addTaskFromInput);
   const toggleTask = useStore((s) => s.toggleTask);
   const removeTask = useStore((s) => s.removeTask);
+  const restoreTask = useStore((s) => s.restoreTask);
   const patchTask = useStore((s) => s.patchTask);
   const breakDownTask = useStore((s) => s.breakDownTask);
 
   const [fabOpen, setFabOpen] = useState(false);
   const [banner, setBanner] = useState<string | null>(null);
+  /** Id of the task the undo affordance would bring back. */
+  const [undoId, setUndoId] = useState<string | null>(null);
+  const celebrateRef = useRef<ConfettiHandle>(null);
+  /** Fires the "all done" celebration once per completed-then-empty cycle. */
+  const celebratedRef = useRef(false);
   const [projectSheet, setProjectSheet] = useState<{ open: boolean; editing: string | null }>({
     open: false,
     editing: null,
@@ -124,6 +142,25 @@ export function TaskDashboard() {
 
   const hasAnyTasks = sections.length > 0;
 
+  /** True when every visible top-level task is finished — the celebration cue. */
+  const allDone = useMemo(() => {
+    const top = visibleTasks.filter((task) => task.parentId === null);
+    return top.length > 0 && top.every((task) => !isOpen(task));
+  }, [visibleTasks]);
+
+  // Finishing the last task deserves a moment: a burst of confetti and a haptic,
+  // fired once per empty-then-full cycle so it never spams.
+  useEffect(() => {
+    if (!allDone || view !== 'list') {
+      celebratedRef.current = false;
+      return;
+    }
+    if (celebratedRef.current) return;
+    celebratedRef.current = true;
+    success();
+    celebrateRef.current?.fire();
+  }, [allDone, view]);
+
   const activeProject = useMemo(
     () => projects.find((project) => project.id === activeProjectId) ?? null,
     [activeProjectId, projects],
@@ -152,13 +189,25 @@ export function TaskDashboard() {
     [breakDownTask],
   );
 
+  /**
+   * Swipe-to-delete is recoverable: the task is soft-deleted, so the banner
+   * offers a real undo instead of the two-tap confirmation used elsewhere.
+   */
   const handleDelete = useCallback(
     (id: string) => {
       void removeTask(id);
-      flash('Task deleted', 1800);
+      setUndoId(id);
+      flash('Task deleted', 3200);
     },
     [flash, removeTask],
   );
+
+  const handleUndo = useCallback(() => {
+    if (!undoId) return;
+    void restoreTask(undoId);
+    setUndoId(null);
+    flash('Task restored');
+  }, [flash, restoreTask, undoId]);
 
   const handleMove = useCallback(
     (id: string, status: TaskStatus) => {
@@ -183,20 +232,25 @@ export function TaskDashboard() {
 
   return (
     <View style={{ flex: 1 }}>
+      <Confetti ref={celebrateRef} />
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 150, gap: theme.spacing.lg }}
+        contentContainerStyle={{ paddingBottom: 150, gap: theme.spacing.md }}
       >
-        {/* Greeting — plain type instead of a heavy gradient hero. */}
-        <View style={{ gap: 2 }}>
-          <Text variant="caption" color={theme.colors.textSecondary}>
+        {/*
+          Greeting — date and greeting share one line at a smaller size than
+          before. Together with the compact switcher this is what puts the first
+          task above the fold on a 5-inch phone.
+        */}
+        <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: theme.spacing.sm }}>
+          <Text variant="title">{greeting()}</Text>
+          <Text variant="caption" color={theme.colors.textSecondary} numberOfLines={1}>
             {new Date().toLocaleDateString(undefined, {
               weekday: 'long',
               day: 'numeric',
               month: 'long',
             })}
           </Text>
-          <Text variant="display">{greeting()}</Text>
         </View>
 
         {/* Day at a glance — four numbers and one bar, no card chrome. */}
@@ -251,12 +305,18 @@ export function TaskDashboard() {
           hint="Type naturally — dates, times, #tags, !priority and ~estimates are read automatically."
         />
 
-        {/* Project filter */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ gap: theme.spacing.sm }}
-        >
+        {/*
+          List chips and the view switcher share one row: the chips scroll,
+          the switcher stays docked on the right. Two rows became one, which is
+          the difference between the first task being visible and not.
+        */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm }}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={{ flex: 1 }}
+            contentContainerStyle={{ gap: theme.spacing.sm, paddingRight: theme.spacing.sm }}
+          >
           <Pressable
             onPress={() => {
               selection();
@@ -283,15 +343,17 @@ export function TaskDashboard() {
                 />
               </Pressable>
             ))}
-          <Pressable
-            onPress={() => {
-              tapLight();
-              setProjectSheet({ open: true, editing: null });
-            }}
-          >
-            <FilterPill label="New list" icon="add" active={false} />
-          </Pressable>
-        </ScrollView>
+            <Pressable
+              onPress={() => {
+                tapLight();
+                setProjectSheet({ open: true, editing: null });
+              }}
+            >
+              <FilterPill label="New list" icon="add" active={false} />
+            </Pressable>
+          </ScrollView>
+          <ViewSwitcher value={view} onChange={setView} />
+        </View>
 
         {/* Active-project toolbar — rename / open / delete without leaving the tab. */}
         {activeProject ? (
@@ -347,30 +409,30 @@ export function TaskDashboard() {
           </View>
         ) : null}
 
-        <ViewSwitcher value={view} onChange={setView} />
-
-        {/* The swipe and long-press gestures are invisible otherwise. */}
-        {view === 'list' && hasAnyTasks ? (
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-            <Ionicons name="hand-left-outline" size={13} color={theme.colors.textTertiary} />
-            <Text variant="micro" color={theme.colors.textTertiary} style={{ flex: 1 }}>
-              SWIPE RIGHT TO COMPLETE · SWIPE LEFT TO DELETE · HOLD A TASK FOR AI BREAKDOWN
-            </Text>
-          </View>
-        ) : null}
-
+        {/* Undo banner + (rarely) status messages — one strip, not two. */}
         {banner ? (
           <View
             style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: theme.spacing.sm,
               backgroundColor: theme.colors.accentSoft,
               borderRadius: theme.radii.md,
               paddingVertical: theme.spacing.sm,
               paddingHorizontal: theme.spacing.md,
             }}
           >
-            <Text variant="caption" color={theme.colors.accent}>
+            <Text variant="caption" color={theme.colors.accent} style={{ flex: 1 }}>
               {banner}
             </Text>
+            {undoId ? (
+              <Chip
+                label="Undo"
+                icon="arrow-undo-outline"
+                accessibilityLabel="Restore the deleted task"
+                onPress={handleUndo}
+              />
+            ) : null}
           </View>
         ) : null}
 
@@ -383,9 +445,43 @@ export function TaskDashboard() {
               subtitle={
                 search
                   ? 'Try a different search term.'
-                  : 'Add your first task above — try “Review designs tomorrow 4pm #work !high”.'
+                  : 'Nothing needs you right now. Add something above — or tap an example and watch the parser build the task:'
               }
-            />
+            >
+              {search ? null : (
+                <View style={{ gap: theme.spacing.sm, marginTop: theme.spacing.sm, width: '100%' }}>
+                  {EXAMPLES.map((example) => (
+                    <Pressable
+                      key={example.value}
+                      onPress={() => {
+                        selection();
+                        void addTaskFromInput(example.value, { projectId: activeProjectId });
+                      }}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Add the example task: ${example.label}`}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: theme.spacing.sm,
+                        minHeight: 48,
+                        paddingVertical: theme.spacing.sm,
+                        paddingHorizontal: theme.spacing.md,
+                        borderRadius: theme.radii.lg,
+                        backgroundColor: theme.colors.surface,
+                        borderWidth: StyleSheet.hairlineWidth,
+                        borderColor: theme.colors.border,
+                      }}
+                    >
+                      <Ionicons name={example.icon} size={15} color={theme.colors.accent} />
+                      <Text variant="caption" style={{ flex: 1 }} numberOfLines={1}>
+                        {example.label}
+                      </Text>
+                      <Ionicons name="add" size={15} color={theme.colors.textTertiary} />
+                    </Pressable>
+                  ))}
+                </View>
+              )}
+            </EmptyState>
           ) : (
             <View style={{ gap: theme.spacing.xl }}>
               {sections.map((section) => (
@@ -437,6 +533,11 @@ export function TaskDashboard() {
                   ))}
                 </View>
               ))}
+
+              {/* Gestures are invisible unless they are named somewhere. */}
+              <Text variant="caption" color={theme.colors.textSecondary} align="center">
+                Swipe right to complete · swipe left to delete · hold for an AI breakdown
+              </Text>
             </View>
           )
         ) : null}

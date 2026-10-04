@@ -2,6 +2,7 @@ import type { Priority, Task, TaskStatus, TaskWithTags } from '@/domain/types';
 import { createId, nowIso } from '@/utils/id';
 
 import { getDatabase } from '../client';
+import { buildFtsQuery, shouldUseFts } from '../fts';
 import {
   serializeAttachments,
   serializeLocation,
@@ -330,10 +331,71 @@ export async function softDeleteTask(id: string): Promise<void> {
   });
 }
 
+/**
+ * Full-text search over titles and notes.
+ *
+ * Primary path is the `tasks_fts` FTS5 index (prefix-matched, so it keeps up
+ * with a user typing). Two fallbacks keep it honest:
+ *
+ *  - short queries go straight to LIKE — a two-character prefix matches nearly
+ *    every row, so the index buys nothing;
+ *  - when the index returns nothing we retry with LIKE, which also catches
+ *    infix matches (searching "ilk" still finds "milk"), something FTS5's
+ *    token model cannot do.
+ */
+/**
+ * Reverses {@link softDeleteTask}: clears `deleted_at` down the whole subtree.
+ * Powers the swipe-to-delete undo, so the restore must be as complete as the
+ * delete was.
+ */
+export async function restoreTask(id: string): Promise<void> {
+  const db = await getDatabase();
+  const now = nowIso();
+  await db.withTransactionAsync(async () => {
+    await db.runAsync(
+      `UPDATE tasks SET deleted_at = NULL, updated_at = ?, sync_state = 'pending' WHERE id = ?`,
+      [now, id],
+    );
+    let frontier = [id];
+    while (frontier.length > 0) {
+      const placeholders = frontier.map(() => '?').join(',');
+      const children = await db.getAllAsync<{ id: string }>(
+        `SELECT id FROM tasks WHERE parent_id IN (${placeholders}) AND deleted_at IS NOT NULL`,
+        frontier,
+      );
+      if (children.length === 0) break;
+      await db.runAsync(
+        `UPDATE tasks SET deleted_at = NULL, updated_at = ?, sync_state = 'pending'
+         WHERE id IN (${children.map(() => '?').join(',')})`,
+        [now, ...children.map((c) => c.id)],
+      );
+      frontier = children.map((c) => c.id);
+    }
+  });
+}
+
 export async function searchTasks(query: string, limit = 25): Promise<TaskWithTags[]> {
   const db = await getDatabase();
   const trimmed = query.trim();
   if (!trimmed) return [];
+
+  const ftsQuery = shouldUseFts(trimmed) ? buildFtsQuery(trimmed) : null;
+  if (ftsQuery) {
+    try {
+      // `rank` orders by FTS5's bm25 score (most relevant first).
+      const rows = await db.getAllAsync<TaskRow>(
+        `SELECT t.* FROM tasks_fts f
+         JOIN tasks t ON t.rowid = f.rowid
+         WHERE tasks_fts MATCH ? AND t.deleted_at IS NULL
+         ORDER BY rank LIMIT ?`,
+        [ftsQuery, limit],
+      );
+      if (rows.length > 0) return attachTags(rows.map(toTask));
+    } catch {
+      // Malformed expression for this SQLite build — fall through to LIKE.
+    }
+  }
+
   const rows = await db.getAllAsync<TaskRow>(
     `SELECT t.* FROM tasks t
      WHERE t.deleted_at IS NULL AND (t.title LIKE ? OR t.notes LIKE ?)
@@ -351,15 +413,4 @@ export async function countOpenTasks(): Promise<number> {
   return row?.count ?? 0;
 }
 
-/** Persists a new manual order (used by list drag-and-drop). */
-export async function reorderTasks(orderedIds: string[]): Promise<void> {
-  const db = await getDatabase();
-  await db.withTransactionAsync(async () => {
-    for (let i = 0; i < orderedIds.length; i += 1) {
-      await db.runAsync(
-        `UPDATE tasks SET position = ?, updated_at = ?, sync_state = 'pending' WHERE id = ?`,
-        [i + 1, nowIso(), orderedIds[i]],
-      );
-    }
-  });
-}
+

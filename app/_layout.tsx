@@ -6,6 +6,7 @@ import React, { useCallback, useEffect, useRef } from 'react';
 import { Animated, Linking, StyleSheet, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import { PermissionGate } from '@/components/PermissionSheet';
 import { Text } from '@/components/ui';
 import {
   configureNotifications,
@@ -129,6 +130,9 @@ function ThemedShell({
         <Stack.Screen name="project/[id]" />
         <Stack.Screen name="settings" options={{ presentation: 'modal' }} />
       </Stack>
+
+      {/* Explain-then-ask gate for every OS permission the app requests. */}
+      <PermissionGate />
 
       {lastOutcome ? (
         <Animated.View

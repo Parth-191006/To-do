@@ -16,7 +16,7 @@
  *   cancel or reschedule deterministically after a restart.
  */
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 // NOTE: connection-wide pragmas (journal_mode, foreign_keys) are applied in
 // `getDatabase` BEFORE this SQL runs, never here. Migrations execute inside a
@@ -205,6 +205,15 @@ CREATE TRIGGER IF NOT EXISTS tasks_fts_update AFTER UPDATE ON tasks BEGIN
 END;
 `;
 
+export const MIGRATION_002 = `
+ALTER TABLE habits ADD COLUMN reminder_hour INTEGER;
+ALTER TABLE habits ADD COLUMN reminder_minute INTEGER;
+`;
+
 export const MIGRATIONS: { version: number; sql: string }[] = [
   { version: 1, sql: MIGRATION_001 },
+  {
+    version: 2,
+    sql: MIGRATION_002,
+  },
 ];
