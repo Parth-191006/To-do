@@ -57,7 +57,14 @@ export async function handleNotificationResponse(
   }
 
   if (action === ACTION_START_FOCUS) {
-    return { taskId, action, message: 'Opening the focus timer', url: '/focus' };
+    // The task has to travel with the tap: the promise of a lock-screen action
+    // is "start working on *this*", not "open the timer screen".
+    return {
+      taskId,
+      action,
+      message: 'Starting a focus block',
+      url: `/focus?taskId=${encodeURIComponent(taskId)}&autostart=1`,
+    };
   }
 
   const task = await getTask(taskId);

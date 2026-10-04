@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BottomSheet } from '@/components/BottomSheet';
 import { TaskCard, isTaskOverdue } from '@/components/TaskCard';
+import { TabHeader } from '@/components/TabHeader';
 import { TaskEditorSheet } from '@/components/TaskEditorSheet';
 import { Chip, EmptyState, Text } from '@/components/ui';
 import { findOrCreateTag } from '@/db/repositories/tags';
@@ -177,45 +178,50 @@ export default function InboxScreen() {
   );
 
   return (
-    <View style={{ flex: 1, backgroundColor: theme.colors.background, paddingTop: insets.top }}>
-      <View style={{ paddingHorizontal: theme.spacing.lg, gap: theme.spacing.md, paddingBottom: theme.spacing.sm }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm }}>
-          <Text variant="title">Inbox</Text>
-          <View style={{ flex: 1 }} />
-          <Text variant="caption" color={theme.colors.textSecondary}>
-            {selecting ? `${selected.size} selected` : `${filtered.length} shown`}
-          </Text>
-          {/* Multiselect entry point: a real control, not a hidden gesture. */}
-          <Pressable
-            onPress={() => (selecting ? clearSelection() : toggleSelected(filtered[0]?.id ?? ''))}
-            disabled={filtered.length === 0}
-            hitSlop={10}
-            accessibilityRole="button"
-            accessibilityLabel={selecting ? 'Cancel selection' : 'Select multiple tasks'}
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: 5,
-              minHeight: 40,
-              paddingHorizontal: 12,
-              borderRadius: theme.radii.pill,
-              backgroundColor: selecting ? theme.colors.accent : theme.colors.surfaceSunken,
-              opacity: filtered.length === 0 ? 0.5 : 1,
-            }}
-          >
-            <Ionicons
-              name={selecting ? 'close' : 'checkbox-outline'}
-              size={14}
-              color={selecting ? theme.colors.accentContrast : theme.colors.textSecondary}
-            />
-            <Text
-              variant="caption"
-              color={selecting ? theme.colors.accentContrast : theme.colors.textSecondary}
-            >
-              {selecting ? 'Cancel' : 'Select'}
+    <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
+      <TabHeader
+        title="Inbox"
+        subtitle="Search, filter and bulk-edit everything you have captured."
+        right={
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm }}>
+            <Text variant="caption" color={theme.colors.textSecondary}>
+              {selecting ? `${selected.size} selected` : `${filtered.length} shown`}
             </Text>
-          </Pressable>
-        </View>
+            {/* Multiselect entry point: a real control, not a hidden gesture. */}
+            <Pressable
+              onPress={() => (selecting ? clearSelection() : toggleSelected(filtered[0]?.id ?? ''))}
+              disabled={filtered.length === 0}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel={selecting ? 'Cancel selection' : 'Select multiple tasks'}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 5,
+                minHeight: 40,
+                paddingHorizontal: 12,
+                borderRadius: theme.radii.pill,
+                backgroundColor: selecting ? theme.colors.accent : theme.colors.surfaceSunken,
+                opacity: filtered.length === 0 ? 0.5 : 1,
+              }}
+            >
+              <Ionicons
+                name={selecting ? 'close' : 'checkbox-outline'}
+                size={14}
+                color={selecting ? theme.colors.accentContrast : theme.colors.textSecondary}
+              />
+              <Text
+                variant="caption"
+                color={selecting ? theme.colors.accentContrast : theme.colors.textSecondary}
+              >
+                {selecting ? 'Cancel' : 'Select'}
+              </Text>
+            </Pressable>
+          </View>
+        }
+      />
+
+      <View style={{ paddingHorizontal: theme.spacing.lg, gap: theme.spacing.md, paddingBottom: theme.spacing.sm }}>
 
         <View
           style={{

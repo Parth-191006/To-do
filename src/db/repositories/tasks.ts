@@ -10,6 +10,12 @@ import {
   toTask,
   type TaskRow,
 } from '../mappers';
+import {
+  changedFields,
+  MERGEABLE_TASK_FIELDS,
+  parseFieldMeta,
+  stampFields,
+} from '@/services/sync/merge';
 
 export interface TaskFilters {
   projectId?: string | null;
@@ -179,12 +185,17 @@ export async function createTask(draft: TaskDraft): Promise<TaskWithTags> {
     syncState: 'pending',
   };
 
+  // A brand-new row is "written" by this device in every field, so stamp them
+  // all. That is what lets a later remote edit merge field by field instead of
+  // treating the whole row as one indivisible unit.
+  const fieldMeta = stampFields({}, [...MERGEABLE_TASK_FIELDS], now);
+
   await db.runAsync(
     `INSERT INTO tasks (
        id, project_id, parent_id, title, notes, status, priority, due_at, remind_at,
        recurrence, location_reminder, estimate_minutes, attachments, position,
-       completed_at, created_at, updated_at, deleted_at, sync_state
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 'pending')`,
+       completed_at, created_at, updated_at, deleted_at, sync_state, field_meta
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 'pending', ?)`,
     [
       task.id,
       task.projectId,
@@ -203,6 +214,7 @@ export async function createTask(draft: TaskDraft): Promise<TaskWithTags> {
       task.completedAt,
       task.createdAt,
       task.updatedAt,
+      JSON.stringify(fieldMeta),
     ],
   );
 
@@ -222,17 +234,45 @@ export async function createTask(draft: TaskDraft): Promise<TaskWithTags> {
 
 export async function updateTask(id: string, patch: TaskDraft): Promise<TaskWithTags | null> {
   const db = await getDatabase();
-  const existing = await getTask(id);
-  if (!existing) return null;
+  const row = await db.getFirstAsync<TaskRow & { field_meta?: string }>(
+    'SELECT * FROM tasks WHERE id = ?',
+    [id],
+  );
+  if (!row) return null;
+  const existing = toTask(row);
 
   const merged: Task = { ...existing, ...patch, updatedAt: nowIso() };
+
+  // Only the fields this edit actually touched are stamped, so a later remote
+  // write to a *different* field still wins.
+  const touched = changedFields(
+    row as unknown as Record<string, unknown>,
+    {
+      project_id: merged.projectId,
+      parent_id: merged.parentId,
+      title: merged.title,
+      notes: merged.notes,
+      status: merged.status,
+      priority: merged.priority,
+      due_at: merged.dueAt,
+      remind_at: merged.remindAt,
+      recurrence: merged.recurrence,
+      location_reminder: merged.locationReminder,
+      estimate_minutes: merged.estimateMinutes,
+      attachments: merged.attachments,
+      position: merged.position,
+      completed_at: merged.completedAt,
+      deleted_at: merged.deletedAt,
+    },
+  );
+  const fieldMeta = stampFields(parseFieldMeta(row.field_meta), touched, merged.updatedAt);
 
   await db.runAsync(
     `UPDATE tasks SET
        project_id = ?, parent_id = ?, title = ?, notes = ?, status = ?, priority = ?,
        due_at = ?, remind_at = ?, recurrence = ?, location_reminder = ?,
        estimate_minutes = ?, attachments = ?, position = ?, updated_at = ?,
-       sync_state = 'pending'
+       sync_state = 'pending', field_meta = ?
      WHERE id = ?`,
     [
       merged.projectId,
@@ -249,6 +289,7 @@ export async function updateTask(id: string, patch: TaskDraft): Promise<TaskWith
       serializeAttachments(merged.attachments),
       merged.position,
       merged.updatedAt,
+      JSON.stringify(fieldMeta),
       id,
     ],
   );

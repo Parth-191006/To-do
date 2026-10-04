@@ -6,8 +6,19 @@ import { Linking, Pressable, ScrollView, StyleSheet, Switch, TextInput, View } f
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BrandMark } from '@/components/BrandMark';
+import { BottomSheet } from '@/components/BottomSheet';
 import { Divider, Chip, Text } from '@/components/ui';
 import { resetDatabase } from '@/db/client';
+import {
+  exportCsv,
+  exportJson,
+  importFromJsonText,
+  localBackupExists,
+  localBackupPath,
+  readLocalBackupInfo,
+  writeLocalBackup,
+} from '@/services/data/export';
+import * as FileSystem from 'expo-file-system/legacy';
 import {
   cancelAllScheduled,
   ensureNotificationPermissions,
@@ -48,6 +59,15 @@ export default function SettingsScreen() {
 
   const autoStartBreak = usePreferences((state) => state.autoStartBreak);
   const setAutoStartBreak = usePreferences((state) => state.setAutoStartBreak);
+  const appLock = usePreferences((state) => state.appLock);
+  const setAppLock = usePreferences((state) => state.setAppLock);
+  const dailyGoalMinutes = usePreferences((state) => state.dailyGoalMinutes);
+  const weeklyGoalTasks = usePreferences((state) => state.weeklyGoalTasks);
+
+  const [backup, setBackup] = useState<{ exists: boolean; modifiedAt?: number }>({ exists: false });
+  const [importOpen, setImportOpen] = useState(false);
+  const [importText, setImportText] = useState('');
+  const [dataNote, setDataNote] = useState<string | null>(null);
 
   const [permission, setPermission] = useState<'granted' | 'denied' | 'undetermined'>('undetermined');
   const [pending, setPending] = useState(0);
@@ -187,18 +207,96 @@ export default function SettingsScreen() {
     }
   }, [refreshStatus]);
 
+  const refreshBackupInfo = useCallback(async () => {
+    setBackup(await readLocalBackupInfo().catch(() => ({ exists: false })));
+  }, []);
+
+  useEffect(() => {
+    void refreshBackupInfo();
+  }, [refreshBackupInfo]);
+
+  const handleExport = useCallback(
+    async (kind: 'json' | 'csv') => {
+      setBusy(true);
+      try {
+        const result = kind === 'json' ? await exportJson() : await exportCsv();
+        setDataNote(
+          result.ok
+            ? result.shared
+              ? `Exported (${kind.toUpperCase()}) — pick where to send it.`
+              : `Exported to ${result.uri}`
+            : (result.reason ?? 'Could not export.'),
+        );
+      } finally {
+        setBusy(false);
+      }
+    },
+    [],
+  );
+
+  const handleBackupNow = useCallback(async () => {
+    setBusy(true);
+    try {
+      const path = await writeLocalBackup();
+      setDataNote(path ? 'Local backup written on this device.' : 'Could not write the backup.');
+      await refreshBackupInfo();
+    } finally {
+      setBusy(false);
+    }
+  }, [refreshBackupInfo]);
+
+  const handleImport = useCallback(
+    async (text: string) => {
+      setBusy(true);
+      try {
+        const result = await importFromJsonText(text);
+        setDataNote(result.message);
+        if (result.ok) {
+          setImportOpen(false);
+          setImportText('');
+          await bootstrap();
+        }
+      } finally {
+        setBusy(false);
+      }
+    },
+    [bootstrap],
+  );
+
+  const handleRestoreBackup = useCallback(async () => {
+    setBusy(true);
+    try {
+      if (!(await localBackupExists())) {
+        setDataNote('No local backup on this device yet — export one first.');
+        return;
+      }
+      const text = await FileSystem.readAsStringAsync(await localBackupPath());
+      await handleImport(text);
+    } catch {
+      setDataNote('Could not read the local backup.');
+    } finally {
+      setBusy(false);
+    }
+  }, [handleImport]);
+
+  /**
+   * Clearing local data now takes a backup first. A single mis-tap used to be
+   * unrecoverable; with the snapshot on disk it can be undone from this screen.
+   */
   const handleReset = useCallback(async () => {
     setBusy(true);
     try {
+      await writeLocalBackup().catch(() => null);
       await cancelAllScheduled();
       await resetDatabase();
       await bootstrap();
-      setSyncMessage('Local data cleared.');
+      setSyncMessage('Local data cleared — a backup was saved first.');
+      await refreshBackupInfo();
       await refreshStatus();
     } finally {
       setBusy(false);
     }
-  }, [bootstrap, refreshStatus]);
+  }, [bootstrap, refreshBackupInfo, refreshStatus]);
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
@@ -322,6 +420,15 @@ export default function SettingsScreen() {
             value={autoStartBreak}
             onChange={setAutoStartBreak}
           />
+          <Row label="Daily focus goal" value={`${dailyGoalMinutes} min`} />
+          <Row
+            label="Weekly task goal"
+            value={weeklyGoalTasks === 0 ? 'not set' : `${weeklyGoalTasks} tasks`}
+          />
+          <Text variant="caption" color={theme.colors.textSecondary}>
+            Change the daily goal, the long-break cycle and a custom focus or break length from the
+            Focus tab: tap “Custom”.
+          </Text>
           <Text variant="micro" color={theme.colors.textTertiary}>
             THE BREAK KEEPS TIME AGAINST THE WALL CLOCK — LOCK THE SCREEN OR LEAVE THE APP AND IT STILL
             COUNTS DOWN AND FIRES THE END ALERT.
@@ -389,15 +496,90 @@ export default function SettingsScreen() {
           ) : null}
         </Section>
 
+        <Section title="Security" icon="lock-closed-outline">
+          <ToggleRow
+            label="App lock"
+            caption="Ask for your fingerprint, face or device PIN when TaskFlow opens (and again after 30 seconds away). Uses the screen lock already on this phone — no TaskFlow password to remember."
+            value={appLock}
+            onChange={setAppLock}
+          />
+        </Section>
+
         <Section title="Your data" icon="server-outline">
           <Row label="Projects" value={`${projects.length}`} />
           <Row label="Tasks" value={`${tasks.length}`} />
           <Row label="Habits" value={`${habits.length}`} />
-          <Text variant="micro" color={theme.colors.textTertiary}>
-            STORED LOCALLY IN SQLITE — INSTANT AND OFFLINE-FIRST. NOTHING LEAVES THE DEVICE UNLESS YOU
-            CONNECT A BACKEND.
+          <Row
+            label="Local backup"
+            value={
+              backup.exists && backup.modifiedAt
+                ? new Date(backup.modifiedAt).toLocaleString()
+                : 'none yet'
+            }
+          />
+
+          <View style={{ flexDirection: 'row', gap: theme.spacing.sm, flexWrap: 'wrap' }}>
+            <Chip
+              label="Export JSON"
+              icon="download-outline"
+              accessibilityLabel="Export every task, habit and list as JSON"
+              onPress={() => void handleExport('json')}
+            />
+            <Chip
+              label="Export CSV"
+              icon="grid-outline"
+              accessibilityLabel="Export tasks as CSV"
+              onPress={() => void handleExport('csv')}
+            />
+            <Chip
+              label="Import"
+              icon="push-outline"
+              accessibilityLabel="Import from a TaskFlow backup"
+              onPress={() => {
+                setDataNote(null);
+                setImportOpen(true);
+              }}
+            />
+            <Chip
+              label={busy ? 'Working…' : 'Back up now'}
+              icon="save-outline"
+              accessibilityLabel="Write a local backup now"
+              onPress={() => void handleBackupNow()}
+            />
+            <Chip
+              label="Restore backup"
+              icon="refresh-outline"
+              accessibilityLabel="Restore the last local backup"
+              onPress={() => void handleRestoreBackup()}
+            />
+          </View>
+
+          {dataNote ? (
+            <Text variant="caption" color={theme.colors.accent}>
+              {dataNote}
+            </Text>
+          ) : null}
+
+          <Text variant="caption" color={theme.colors.textSecondary}>
+            Privacy: everything you type lives in a SQLite database inside this app — tasks, notes,
+            habits, focus sessions, notification bookkeeping and your attached photos and voice notes.
+            Nothing is uploaded while you stay local; the only network calls this build can make are
+            the optional Supabase sync (only with your own credentials and after you sign in) and an
+            AI transcription or breakdown endpoint if you configured one. Backups written here are
+            files on this device, shared only when you choose a destination.
           </Text>
-          <Chip label="Reset local data" icon="trash-outline" color={theme.colors.danger} onPress={() => void handleReset()} />
+
+          <Text variant="micro" color={theme.colors.textTertiary}>
+            EXPORTS CARRY EVERY TASK, LIST, TAG AND HABIT (JSON) OR ONE ROW PER TASK (CSV). CLEARING
+            LOCAL DATA WRITES A BACKUP FIRST, SO IT CAN BE UNDONE.
+          </Text>
+          <Chip
+            label="Reset local data"
+            icon="trash-outline"
+            color={theme.colors.danger}
+            accessibilityLabel="Clear all local data"
+            onPress={() => void handleReset()}
+          />
         </Section>
 
         <Section title="TaskFlow" icon="information-circle-outline">
@@ -420,6 +602,55 @@ export default function SettingsScreen() {
           </Text>
         </Section>
       </ScrollView>
+
+      {/*
+        Import is a paste box rather than a file picker: the JSON export is
+        plain text, and this keeps the flow offline and dependency-free.
+      */}
+      <BottomSheet
+        visible={importOpen}
+        onClose={() => setImportOpen(false)}
+        title="Import TaskFlow data"
+        subtitle="Paste the contents of a backup file. Existing items are kept."
+        heightRatio={0.7}
+      >
+        <View style={{ gap: theme.spacing.md, paddingTop: theme.spacing.lg }}>
+          <TextInput
+            value={importText}
+            onChangeText={setImportText}
+            multiline
+            placeholder='{"version":1,"tasks":[…]}'
+            placeholderTextColor={theme.colors.textTertiary}
+            accessibilityLabel="Paste backup JSON"
+            style={[
+              theme.typography.caption,
+              {
+                color: theme.colors.textPrimary,
+                backgroundColor: theme.colors.surfaceSunken,
+                borderRadius: theme.radii.md,
+                padding: theme.spacing.md,
+                minHeight: 160,
+                textAlignVertical: 'top',
+              },
+            ]}
+          />
+          <View style={{ flexDirection: 'row', gap: theme.spacing.sm }}>
+            <Chip
+              label={busy ? 'Importing…' : 'Import'}
+              icon="push-outline"
+              selected
+              accessibilityLabel="Import the pasted data"
+              onPress={() => void handleImport(importText)}
+            />
+            <Chip label="Cancel" accessibilityLabel="Cancel the import" onPress={() => setImportOpen(false)} />
+          </View>
+          {dataNote ? (
+            <Text variant="caption" color={theme.colors.textSecondary}>
+              {dataNote}
+            </Text>
+          ) : null}
+        </View>
+      </BottomSheet>
     </View>
   );
 }

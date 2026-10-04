@@ -43,6 +43,13 @@ export async function registerNotificationCategories(): Promise<void> {
       options: { opensAppToForeground: false },
     },
     {
+      // "Start focus" belongs on a task's banner as much as on the timer's:
+      // it is the action you want when a reminder lands mid-queue.
+      identifier: ACTION_START_FOCUS,
+      buttonTitle: 'Start focus',
+      options: { opensAppToForeground: true },
+    },
+    {
       identifier: ACTION_SNOOZE_5,
       buttonTitle: 'Snooze 5m',
       options: { opensAppToForeground: false },

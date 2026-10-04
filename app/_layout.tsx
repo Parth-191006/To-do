@@ -6,6 +6,7 @@ import React, { useCallback, useEffect, useRef } from 'react';
 import { Animated, Linking, StyleSheet, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import { AppLock } from '@/components/AppLock';
 import { PermissionGate } from '@/components/PermissionSheet';
 import { Text } from '@/components/ui';
 import {
@@ -118,18 +119,21 @@ function ThemedShell({
   return (
     <>
       <StatusBar style={theme.isDark ? 'light' : 'dark'} />
-      <Stack
-        screenOptions={{
-          headerShown: false,
-          contentStyle: { backgroundColor: theme.colors.background },
-          animation: 'slide_from_right',
-        }}
-      >
-        <Stack.Screen name="(tabs)" />
-        <Stack.Screen name="task/[id]" options={{ presentation: 'card' }} />
-        <Stack.Screen name="project/[id]" />
-        <Stack.Screen name="settings" options={{ presentation: 'modal' }} />
-      </Stack>
+      {/* Optional biometric lock; a no-op pass-through while it is off. */}
+      <AppLock>
+        <Stack
+          screenOptions={{
+            headerShown: false,
+            contentStyle: { backgroundColor: theme.colors.background },
+            animation: 'slide_from_right',
+          }}
+        >
+          <Stack.Screen name="(tabs)" />
+          <Stack.Screen name="task/[id]" options={{ presentation: 'card' }} />
+          <Stack.Screen name="project/[id]" />
+          <Stack.Screen name="settings" options={{ presentation: 'modal' }} />
+        </Stack>
+      </AppLock>
 
       {/* Explain-then-ask gate for every OS permission the app requests. */}
       <PermissionGate />

@@ -6,6 +6,7 @@ import { Pressable, ScrollView, TextInput, View } from 'react-native';
 import type { Priority, Recurrence, TaskWithTags } from '@/domain/types';
 import { findOrCreateTag } from '@/db/repositories/tags';
 import { reverseGeocode } from '@/services/notifications/geofence';
+import { usePreferences } from '@/store/usePreferences';
 import { useStore } from '@/store/useStore';
 import { useTheme } from '@/theme/ThemeProvider';
 import { selection, success, warning } from '@/utils/haptics';
@@ -53,6 +54,8 @@ export function TaskEditorSheet({ task, visible, onClose }: TaskEditorSheetProps
   const [notes, setNotes] = useState('');
   const [tagDraft, setTagDraft] = useState('');
   const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const saveTemplate = usePreferences((s) => s.saveTemplate);
 
   useEffect(() => {
     if (!task) return;
@@ -318,6 +321,25 @@ export function TaskEditorSheet({ task, visible, onClose }: TaskEditorSheetProps
         </Section>
 
         <Divider />
+
+        {/* Templates: the task itself is the best description of the task. */}
+        <View style={{ flexDirection: 'row', gap: theme.spacing.sm, flexWrap: 'wrap' }}>
+          <Chip
+            label="Save as template"
+            icon="bookmark-outline"
+            accessibilityLabel="Save this task as a reusable template"
+            onPress={() => {
+              saveTemplate(task.title);
+              success();
+              setNotice('Saved — it will appear as a chip under Quick add.');
+            }}
+          />
+        </View>
+        {notice ? (
+          <Text variant="caption" color={theme.colors.accent}>
+            {notice}
+          </Text>
+        ) : null}
 
         <View style={{ flexDirection: 'row', gap: theme.spacing.sm }}>
           <Chip

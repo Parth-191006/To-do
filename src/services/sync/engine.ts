@@ -3,6 +3,7 @@ import type { EntityKind } from '@/domain/types';
 import { createId, nowIso } from '@/utils/id';
 
 import { getCurrentUserId, getSupabase, isSupabaseConfigured } from '../supabase/client';
+import { mergeFieldMeta, mergeRow, parseFieldMeta } from './merge';
 
 /**
  * Offline-first sync engine.
@@ -16,9 +17,11 @@ import { getCurrentUserId, getSupabase, isSupabaseConfigured } from '../supabase
  *   field mapping layer is required on either direction.
  * - `task_tags` has no `updated_at`, so tag assignment is captured in
  *   `sync_outbox` as an explicit operation.
- * - Pulls are deltas by `updated_at` and merged last-write-wins. A pending
- *   local edit that is newer than the remote row always wins, so we never
- *   silently discard work made offline.
+ * - Pulls are deltas by `updated_at` and merged **field by field** using the
+ *   per-field write stamps in `tasks.field_meta` (see `./merge`). Two people
+ *   editing different fields of the same task therefore keep both edits; the
+ *   older whole-row rule is gone. Rows written before the stamps existed fall
+ *   back to `updated_at` per field, which is exactly the old behaviour.
  *
  * With no Supabase credentials, every entry point is a cheap no-op.
  */
@@ -190,29 +193,71 @@ async function pullDeltas(): Promise<{ pulled: number; errors: string[] }> {
     for (const remote of data as Record<string, unknown>[]) {
       const id = remote.id as string;
       const remoteUpdatedAt = remote.updated_at as string;
-      const local = await db.getFirstAsync<{ updated_at: string; sync_state: string }>(
-        `SELECT updated_at, sync_state FROM ${table} WHERE id = ?`,
+      const local = await db.getFirstAsync<Record<string, unknown> & { field_meta?: string }>(
+        `SELECT * FROM ${table} WHERE id = ?`,
         [id],
       );
 
-      // Last-write-wins, but never clobber a newer local edit.
-      if (local && local.sync_state === 'pending' && local.updated_at > remoteUpdatedAt) {
+      if (!local) {
+        // Never seen here: insert the remote row as-is.
+        const columns = Object.keys(remote).filter((column) => column !== 'field_meta');
+        const values = columns.map((column) => toSqliteValue(remote[column]));
+        await db.runAsync(
+          `INSERT OR REPLACE INTO ${table} (${columns.join(', ')})
+           VALUES (${columns.map(() => '?').join(', ')})`,
+          values,
+        );
+        pulled += 1;
+        if (remoteUpdatedAt > highWater) highWater = remoteUpdatedAt;
         continue;
       }
 
-      const columns = Object.keys(remote);
-      const values = columns.map((column) => {
-        const value = remote[column];
-        if (value === null || value === undefined) return null;
-        if (typeof value === 'boolean') return value ? 1 : 0;
-        if (typeof value === 'object') return JSON.stringify(value);
-        return value as string | number;
+      if (table !== 'tasks') {
+        // Other tables have no per-field stamps; row-level last-write-wins is
+        // still the right rule for them (a document either exists or it does
+        // not), with the local pending copy protected as before.
+        if (local.sync_state === 'pending' && (local.updated_at as string) > remoteUpdatedAt) {
+          continue;
+        }
+        const columns = Object.keys(remote).filter((column) => column !== 'field_meta');
+        const values = columns.map((column) => toSqliteValue(remote[column]));
+        await db.runAsync(
+          `INSERT OR REPLACE INTO ${table} (${columns.join(', ')})
+           VALUES (${columns.map(() => '?').join(', ')})`,
+          values,
+        );
+        pulled += 1;
+        if (remoteUpdatedAt > highWater) highWater = remoteUpdatedAt;
+        continue;
+      }
+
+      // Tasks: field-level merge so concurrent edits to different fields both
+      // survive. `tookRemote` is empty when this device simply wins.
+      const localMeta = parseFieldMeta(local.field_meta);
+      const remoteMeta = parseFieldMeta(remote.field_meta);
+      const result = mergeRow({
+        local,
+        remote,
+        localMeta,
+        remoteMeta,
+        localUpdatedAt: (local.updated_at as string) ?? remoteUpdatedAt,
+        remoteUpdatedAt,
       });
 
+      if (result.tookRemote.length === 0) {
+        // Nothing changed locally — record the new high-water mark and move on
+        // rather than rewriting an identical row.
+        if (remoteUpdatedAt > highWater) highWater = remoteUpdatedAt;
+        continue;
+      }
+
+      const mergedMeta = mergeFieldMeta(localMeta, remoteMeta);
+      const assignments = result.tookRemote.map((field) => `${field} = ?`);
+      const values = result.tookRemote.map((field) => toSqliteValue(result.merged[field]));
       await db.runAsync(
-        `INSERT OR REPLACE INTO ${table} (${columns.join(', ')})
-         VALUES (${columns.map(() => '?').join(', ')})`,
-        values,
+        `UPDATE tasks SET ${assignments.join(', ')}, field_meta = ?, sync_state = 'synced'
+         WHERE id = ?`,
+        [...values, JSON.stringify(mergedMeta), id],
       );
       pulled += 1;
       if (remoteUpdatedAt > highWater) highWater = remoteUpdatedAt;
@@ -221,6 +266,14 @@ async function pullDeltas(): Promise<{ pulled: number; errors: string[] }> {
 
   if (highWater !== since) await setLastPulledAt(highWater);
   return { pulled, errors };
+}
+
+/** SQLite only stores strings, numbers and nulls — flatten everything else. */
+function toSqliteValue(value: unknown): string | number | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'boolean') return value ? 1 : 0;
+  if (typeof value === 'object') return JSON.stringify(value);
+  return value as string | number;
 }
 
 /** Removes outbox rows that have failed too many times so they stop blocking. */

@@ -16,7 +16,7 @@
  *   cancel or reschedule deterministically after a restart.
  */
 
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 // NOTE: connection-wide pragmas (journal_mode, foreign_keys) are applied in
 // `getDatabase` BEFORE this SQL runs, never here. Migrations execute inside a
@@ -210,10 +210,22 @@ ALTER TABLE habits ADD COLUMN reminder_hour INTEGER;
 ALTER TABLE habits ADD COLUMN reminder_minute INTEGER;
 `;
 
+/**
+ * Per-field write stamps, so two people editing different fields of the same
+ * task both keep their change (see `src/services/sync/merge.ts`).
+ */
+export const MIGRATION_003 = `
+ALTER TABLE tasks ADD COLUMN field_meta TEXT NOT NULL DEFAULT '{}';
+`;
+
 export const MIGRATIONS: { version: number; sql: string }[] = [
   { version: 1, sql: MIGRATION_001 },
   {
     version: 2,
     sql: MIGRATION_002,
+  },
+  {
+    version: 3,
+    sql: MIGRATION_003,
   },
 ];

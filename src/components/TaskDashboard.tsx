@@ -17,8 +17,11 @@ import { useStore } from '@/store/useStore';
 import { useTheme } from '@/theme/ThemeProvider';
 import { selection, success, tapHeavy, tapLight } from '@/utils/haptics';
 
+import { usePreferences } from '@/store/usePreferences';
+
 import { Confetti, type ConfettiHandle } from './Confetti';
 import { ProjectSheet } from './ProjectSheet';
+import { ReviewCard } from './ReviewCard';
 import { SmartInput } from './SmartInput';
 import { TaskCard } from './TaskCard';
 import { ViewSwitcher } from './ViewSwitcher';
@@ -73,6 +76,11 @@ export function TaskDashboard() {
   const restoreTask = useStore((s) => s.restoreTask);
   const patchTask = useStore((s) => s.patchTask);
   const breakDownTask = useStore((s) => s.breakDownTask);
+
+  const templates = usePreferences((s) => s.templates);
+  const removeTemplate = usePreferences((s) => s.removeTemplate);
+  const lastTaskText = usePreferences((s) => s.lastTaskText);
+  const setLastTaskText = usePreferences((s) => s.setLastTaskText);
 
   const [fabOpen, setFabOpen] = useState(false);
   const [banner, setBanner] = useState<string | null>(null);
@@ -294,6 +302,9 @@ export function TaskDashboard() {
           </View>
         </View>
 
+        {/* Morning plan / evening wrap-up — one card, at most once a half-day. */}
+        <ReviewCard />
+
         {/* Capture */}
         <SmartInput
           onSubmit={async (text, attachments) => {
@@ -301,9 +312,50 @@ export function TaskDashboard() {
             if (created && attachments.length > 0) {
               await patchTask(created.id, { attachments });
             }
+            // Remembered for the "Repeat last" chip — the most common task is
+            // often the one you created a moment ago.
+            setLastTaskText(text.trim() || null);
           }}
           hint="Type naturally — dates, times, #tags, !priority and ~estimates are read automatically."
         />
+
+        {/* Repeat last + saved templates. Long-press a template to forget it. */}
+        {lastTaskText || templates.length > 0 ? (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ gap: theme.spacing.sm }}
+          >
+            {lastTaskText ? (
+              <Chip
+                label="Repeat last"
+                icon="refresh-outline"
+                accessibilityLabel="Add the task you captured last"
+                onPress={() => {
+                  selection();
+                  void addTaskFromInput(lastTaskText, { projectId: activeProjectId });
+                }}
+              />
+            ) : null}
+            {templates.map((template) => (
+              <Chip
+                key={template.id}
+                label={template.label}
+                icon="bookmark-outline"
+                accessibilityLabel={`Add the template ${template.text}. Long press to forget it.`}
+                onPress={() => {
+                  selection();
+                  void addTaskFromInput(template.text, { projectId: activeProjectId });
+                }}
+                onLongPress={() => {
+                  tapHeavy();
+                  removeTemplate(template.id);
+                  flash('Template forgotten');
+                }}
+              />
+            ))}
+          </ScrollView>
+        ) : null}
 
         {/*
           List chips and the view switcher share one row: the chips scroll,

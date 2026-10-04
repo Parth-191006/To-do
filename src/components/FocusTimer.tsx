@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useLocalSearchParams } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState, Pressable, ScrollView, View } from 'react-native';
 
@@ -67,6 +68,9 @@ export function FocusTimer() {
   const longBreakMinutes = usePreferences((s) => s.longBreakMinutes);
   const roundsCompleted = usePreferences((s) => s.roundsCompleted);
   const setRoundsCompleted = usePreferences((s) => s.setRoundsCompleted);
+
+  /** Set when the user taps "Start focus" on a task's notification or lock screen. */
+  const params = useLocalSearchParams<{ taskId?: string; autostart?: string }>();
 
   const [mode, setMode] = useState<Mode>('focus');
   const [focusMs, setFocusMs] = useState(25 * 60_000);
@@ -325,6 +329,26 @@ export function FocusTimer() {
 
   const minutesSpent = Math.floor(elapsedMs(clock) / 60_000);
   const phaseLabel = clock.phase === 'paused' ? 'PAUSED' : mode === 'focus' ? 'FOCUS' : 'BREAK';
+
+  /**
+   * Quick action from a notification, the lock screen or a deep link:
+   * `/focus?taskId=…&autostart=1` links the task and starts the block without
+   * another tap — which is the whole point of the action.
+   */
+  const handledQuickStartRef = useRef(false);
+  useEffect(() => {
+    if (handledQuickStartRef.current) return;
+    const requested = typeof params.taskId === 'string' ? params.taskId : null;
+    if (!requested) return;
+    handledQuickStartRef.current = true;
+    setTaskId(requested);
+    if (params.autostart === '1' && clock.phase === 'idle') {
+      // Delay one frame so the linked task is in state before the block starts
+      // (the alert text and session row both read it).
+      const timer = setTimeout(() => void start(), 120);
+      return () => clearTimeout(timer);
+    }
+  }, [clock.phase, params.autostart, params.taskId, start]);
 
   return (
     <View style={{ gap: theme.spacing.lg }}>
