@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useRef } from 'react';
 import { Animated, Easing, View } from 'react-native';
 
 import { computeStreak, longestStreak } from '@/db/repositories/habits';
+import { formatHours } from '@/domain/format';
 import { usePreferences } from '@/store/usePreferences';
 import { useStore } from '@/store/useStore';
 import { useTheme } from '@/theme/ThemeProvider';
@@ -167,7 +168,6 @@ export function AnalyticsPanel({ windowDays = 14 }: AnalyticsPanelProps) {
 
     return {
       done: doneTasks.length,
-      focusHours: focusSeconds / 3600,
       focusSeconds,
       bestDay,
       bestCount,
@@ -243,7 +243,9 @@ export function AnalyticsPanel({ windowDays = 14 }: AnalyticsPanelProps) {
         <MetricTile
           icon="timer-outline"
           label="Focus"
-          value={`${Math.round(dailyFocus.reduce((sum, day) => sum + day.seconds, 0) / 3600)}h`}
+          // Through `formatHours`: rounding to whole hours showed "0h" next to
+          // a real 25-minute session, which reads as broken data.
+          value={formatHours(dailyFocus.reduce((total, day) => total + day.seconds, 0))}
           caption={`last ${windowDays} days`}
           color={theme.colors.accent}
         />
@@ -442,13 +444,6 @@ function WeeklyStat({
       </Text>
     </View>
   );
-}
-
-/** "42m" under an hour, "3.5h" above it — never "0h" for a real session. */
-function formatHours(seconds: number): string {
-  if (seconds <= 0) return '0h';
-  if (seconds < 3600) return `${Math.round(seconds / 60)}m`;
-  return `${(seconds / 3600).toFixed(1)}h`;
 }
 
 /**

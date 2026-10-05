@@ -319,9 +319,13 @@ export function parseTaskInput(rawInput: string, options: ParseOptions = {}): Pa
         return { kind: 'date', label: labelForDate(date, now), value: date };
       },
     ),
-    ...scan<Date>(input, /\b(today|tonight|tomorrow)\b/gi, consumed, (m) => {
+    // `yesterday` belongs here too: without it "email the invoice yesterday"
+    // kept the word in the title and — worse — still matched the bare time
+    // ("5pm"), so a forgotten task silently rescheduled itself to *later".
+    ...scan<Date>(input, /\b(today|tonight|tomorrow|yesterday)\b/gi, consumed, (m) => {
       const word = m[1].toLowerCase();
-      const date = word === 'tomorrow' ? addDays(now, 1) : now;
+      const offset = word === 'tomorrow' ? 1 : word === 'yesterday' ? -1 : 0;
+      const date = offset === 0 ? now : addDays(now, offset);
       return { kind: 'date', label: labelForDate(date, now), value: date };
     }),
     ...scan<Date>(

@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Download the latest APK
+    url: https://github.com/Parth-191006/To-do/releases/latest
+    about: The newest signed release — often newer than the version you have installed.
+  - name: Installation help
+    url: https://github.com/Parth-191006/To-do/blob/main/docs/INSTALL.md
+    about: Sideloading, permissions and troubleshooting for Android.

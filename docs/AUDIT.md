@@ -16,7 +16,7 @@ changes is built and signed by `.github/workflows/android-apk.yml`; the on-devic
 (sound, lock-screen behaviour, OEM notification quirks) still has to be run on a phone.
 Anything that cannot work without a device is called out in `Known gaps`.
 
-**The suites moved to Vitest in this release** (`tests/`, 108 assertions) —
+**The suites moved to Vitest in this release** (`tests/`, 115 assertions) —
 row-level "Proof" references below point at them.
 
 Legend — **Works?**
@@ -27,7 +27,7 @@ Legend — **Works?**
 
 | Feature | Works? | What was broken | Fix |
 | --- | --- | --- | --- |
-| Quick Add — NL parsing (date, time, `#tag`, `!priority`, `~estimate`, recurrence) | yes | Nothing. `parseTaskInput` handles all six fragment types, returns the cleaned title and character spans; `addTaskFromInput` writes them through to SQLite. Proof: `tests/nlp.test.ts` (16 assertions). | — |
+| Quick Add — NL parsing (date, time, `#tag`, `!priority`, `~estimate`, recurrence) | yes | Nothing. `parseTaskInput` handles all six fragment types, returns the cleaned title and character spans; `addTaskFromInput` writes them through to SQLite. Proof: `tests/nlp.test.ts` (18 assertions). | — |
 | Quick Add — inline chips while typing | yes | Chips rendered *below* the input, under the keyboard-adjacent controls, so the feedback was easy to miss. | Moved the `DETECTED` chip row above the field; chips are now between the eye and the keyboard. |
 | Voice note recording | yes | Permission was requested cold by the OS dialog, with no in-app explanation, and a denial was permanent. | Added the explain-then-ask `PermissionSheet`; the mic only reaches the OS prompt after an explicit "Allow". |
 | Voice note playback | yes | Nothing. `AudioAttachment` in `app/task/[id].tsx` plays, pauses and rewinds at end of clip. | — |
@@ -88,6 +88,17 @@ Legend — **Works?**
 | Sync — activity log | yes | Nothing. Written on create / breakdown / project create, read on the list screen. | — |
 | Sync — conflict handling | partial | Last-write-wins was **whole-row**: one collaborator's edit to the title could erase another's edit to the notes. | Per-field timestamp merge: `tasks.field_meta` (schema v3) stores a stamp per column and `mergeRow` resolves field by field. Proof: `tests/merge.test.ts` (26 assertions), including the two-people/different-fields case. Rule documented in `ARCHITECTURE.md` §8. Remaining limit: rows last written before v3 carry no stamps and still fall back to whole-row LWW until edited again. |
 | Dead-end buttons | fixed | Two: the habit-reminder code path had no UI, and "Start focus" from a notification opened the screen without starting anything. Also `reorderTasks` was unreachable dead code. | Both wired; `reorderTasks` deleted. Every remaining control was traced to an effect. |
+
+## Found while capturing the screenshots
+
+Rendering the app end to end for `docs/screenshots/` — real screens, real SQLite,
+seeded through the app's own Settings → Import path — surfaced two defects that
+inspection had missed. Both are fixed and covered by the suites:
+
+| Symptom | Cause | Fix |
+| --- | --- | --- |
+| `Email the invoice yesterday 5pm` kept the word *yesterday*, then a bare `5pm` pushed the task to later **today** — a forgotten task silently rescheduled itself forward. | The relative-day scan matched only `today|tonight|tomorrow`; the bare-time scan then attached the remaining time to today. | `yesterday` joined the scan with a −1 day offset. Proof: `tests/nlp.test.ts` (18 assertions). |
+| The Insights focus tile read **0h** no matter how much focus had been banked. | `Math.round(seconds / 3600)` collapsed every real session (< 30 min) to 0. | Rounding extracted into `src/domain/format.ts` — `45s` / `25m` / `1.0h` / `3.5h` — used by the tile and covered by `tests/format.test.ts` (5 assertions). |
 
 ## Known gaps (not fixable in this environment)
 

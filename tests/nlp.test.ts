@@ -95,6 +95,23 @@ describe('parseTaskInput', () => {
     expect(clock(parsed.dueAt)).toBe('10/6 20:00');
   });
 
+  it('keeps a yesterday-dated task in the past instead of rolling it forward', () => {
+    // Found while auditing capture: "yesterday" was not a date word, so the
+    // bare "5pm" won and the task was scheduled for *later today*.
+    const parsed = parseTaskInput('Email the invoice yesterday 5pm #work ~20m', { now: NOW });
+    expect(parsed.title).toBe('Email the invoice');
+    expect(clock(parsed.dueAt)).toBe('9/6 17:00');
+    expect(parsed.dueAt && new Date(parsed.dueAt).getTime() < NOW.getTime()).toBe(true);
+    expect(parsed.tags).toEqual(['work']);
+    expect(parsed.estimateMinutes).toBe(20);
+  });
+
+  it('defaults a bare yesterday to 9am the previous day', () => {
+    const parsed = parseTaskInput('Sign the form yesterday', { now: NOW });
+    expect(parsed.title).toBe('Sign the form');
+    expect(clock(parsed.dueAt)).toBe('9/6 09:00');
+  });
+
   it('reports token spans for inline highlighting', () => {
     const parsed = parseTaskInput('Pay rent tomorrow #home !high', { now: NOW });
     const kinds = parsed.tokens.map((token) => token.kind).sort();

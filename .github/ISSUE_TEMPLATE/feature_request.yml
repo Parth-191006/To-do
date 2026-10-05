@@ -1,0 +1,47 @@
+name: Feature request
+description: Suggest something that would make TaskFlow better
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        TaskFlow has **no paywall** — every feature ships unlocked to everyone,
+        so a request has to be something we are willing to maintain forever.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Describe the situation you are in, not the solution you have in mind.
+      placeholder: "I keep forgetting to water the plants because reminders only fire once."
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you like to happen?
+      placeholder: "A reminder that re-arms after I mark it done."
+    validations:
+      required: true
+  - type: dropdown
+    id: offline
+    attributes:
+      label: Could this work with no network?
+      description: Offline-first is the core constraint of this app.
+      options:
+        - "Yes — fully on device (preferred)"
+        - "Needs the cloud / an online service"
+        - "Not sure"
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you have tried
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and the roadmap in the README.
+          required: true

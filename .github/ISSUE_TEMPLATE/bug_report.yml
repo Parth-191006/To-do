@@ -1,0 +1,70 @@
+name: Bug report
+description: Something in TaskFlow does not work as it should
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this. TaskFlow is offline-first, so
+        knowing **whether you were online** is often the key to the bug.
+  - type: input
+    id: version
+    attributes:
+      label: App version
+      description: "Settings → About, e.g. 1.2.3 (or the APK file name you installed)."
+      placeholder: "1.2.3"
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Device and Android version
+      placeholder: "Pixel 7, Android 14"
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Steps to reproduce, and what you expected instead.
+      placeholder: |
+        1. Open Focus
+        2. Tap Custom
+        3. ...
+    validations:
+      required: true
+  - type: dropdown
+    id: offline
+    attributes:
+      label: Was the device online when it happened?
+      options:
+        - Offline / airplane mode
+        - Online
+        - Not sure
+    validations:
+      required: true
+  - type: dropdown
+    id: sync
+    attributes:
+      label: Is cloud sync configured?
+      options:
+        - No — local only (default)
+        - Yes — Supabase env vars set
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots
+      description: Paste any console output, or describe what you saw on screen.
+      render: shell
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues for this problem.
+          required: true
+        - label: I can reproduce this consistently.
+          required: true
