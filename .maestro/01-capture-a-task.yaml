@@ -1,0 +1,46 @@
+# Flow 1 — capture a task in one line.
+#
+# The promise the first-run tour makes: natural language goes in, a task with a
+# real due date, tag and priority comes out. Two separate things are asserted —
+# that the parser *understood* the sentence while it was being typed, and that
+# what landed in the database is the sentence minus the fragments it consumed.
+appId: com.taskflow.app
+tags:
+  - smoke
+---
+- launchApp:
+    clearState: true
+
+# Wipes the preferences table, so the tour is on screen first.
+- runFlow: subflows/dismiss-first-run.yaml
+
+# The tour is gone and the tab shell is up. Asserted through the tab's testID
+# because the visible word "Today" appears on both the tab and the screen
+# heading.
+- assertVisible:
+    id: "tab-today"
+
+# The capture field, addressed by id rather than by text: the card's visible
+# header reads "QUICK ADD", Maestro matches text as a case-insensitive regex,
+# and "Quick add" would therefore hit two nodes.
+- tapOn:
+    id: "quick-add-input"
+- inputText: "Email the invoice tomorrow 5pm #Work !high"
+
+# Each fragment the parser consumed appears as a chip above the field. This is
+# the assertion that the *understanding* worked, not just the save.
+- assertVisible: "Tomorrow"
+- assertVisible: "5:00 PM"
+- assertVisible: "#Work"
+- assertVisible: "High priority"
+
+- tapOn:
+    id: "quick-add-submit"
+
+# What was stored is the sentence minus the fragments: a date and a priority
+# are no longer part of the title. The task is due tomorrow, so it lands in the
+# "Upcoming" bucket — scroll rather than assume it is above the fold.
+- scrollUntilVisible:
+    element:
+      text: "Email the invoice"
+    timeout: 20000

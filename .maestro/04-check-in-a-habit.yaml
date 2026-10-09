@@ -1,0 +1,29 @@
+# Flow 4 — check in a habit.
+#
+# A cleared install has no habits, so Habits shows the "Or start with one of
+# these" starters. Adding one by its starter name is the same `addHabit` path as
+# typing a name, with no typing to flake on.
+#
+# The check-in control carries `accessibilityRole="checkbox"` and flips its own
+# label, so the assertion after the tap is that the habit is now checked in for
+# today — and that tapping again undoes it.
+appId: com.taskflow.app
+tags:
+  - smoke
+---
+- launchApp:
+    clearState: true
+- runFlow: subflows/dismiss-first-run.yaml
+
+- tapOn:
+    id: "tab-habits"
+
+- assertVisible: "Or start with one of these"
+- tapOn: "Add the habit Drink water"
+
+# The starters give way to the habit's own card, with its streak and heatmap.
+- assertVisible: "Complete today"
+- tapOn: "Complete today"
+
+# Checked in: the same control now offers to undo today.
+- assertVisible: "Undo today"

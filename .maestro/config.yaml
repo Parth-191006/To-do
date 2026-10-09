@@ -1,0 +1,14 @@
+# Maestro workspace.
+#
+# `flows` is an explicit allowlist: only the numbered files at this level are
+# tests. The `0*.yaml` glob is deliberately narrower than `*.yaml` so it cannot
+# match this config file either. `subflows/` holds fragments used through
+# `runFlow` — they have no `launchApp` of their own and would fail if Maestro
+# discovered them as tests in their own right.
+#
+#   maestro test .maestro                        # every flow
+#   maestro test .maestro/01-capture-a-task.yaml # just one
+#   maestro test --include-tags smoke .maestro   # the tagged subset
+#
+flows:
+  - "0*.yaml"

@@ -1,0 +1,29 @@
+# Flow 3 — start a Pomodoro.
+#
+# The Focus control is one button whose accessible name flips with the state, so
+# start → pause → start is a complete round trip that never needs to read the
+# clock: it asserts the state machine, not the countdown.
+#
+# The tab is addressed by testID because the screen heading and the tab label
+# are the same word ("Focus").
+appId: com.taskflow.app
+tags:
+  - smoke
+---
+- launchApp:
+    clearState: true
+- runFlow: subflows/dismiss-first-run.yaml
+
+- tapOn:
+    id: "tab-focus"
+
+- assertVisible: "Start the block"
+- tapOn: "Start the block"
+
+# Running: the same control now offers to pause.
+- assertVisible: "Pause the block"
+- tapOn: "Pause the block"
+
+# Paused. The visible pill reads "Resume" but the accessible name stays
+# "Start the block" — the label describes the action, and both states can run.
+- assertVisible: "Start the block"

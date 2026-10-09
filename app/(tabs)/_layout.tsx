@@ -45,6 +45,10 @@ export default function TabsLayout() {
         name="index"
         options={{
           title: t('tabs.today'),
+          // A stable handle for the Maestro flows: the screen heading and the
+          // tab label are the same word ("Focus", "Habits"), so a text
+          // selector would be ambiguous.
+          tabBarButtonTestID: 'tab-today',
           tabBarIcon: ({ color, size, focused }) => (
             <Ionicons name={focused ? 'today' : 'today-outline'} size={size} color={color} />
           ),
@@ -54,6 +58,7 @@ export default function TabsLayout() {
         name="inbox"
         options={{
           title: t('tabs.inbox'),
+          tabBarButtonTestID: 'tab-inbox',
           tabBarIcon: ({ color, size, focused }) => (
             <Ionicons name={focused ? 'file-tray' : 'file-tray-outline'} size={size} color={color} />
           ),
@@ -63,6 +68,7 @@ export default function TabsLayout() {
         name="focus"
         options={{
           title: t('tabs.focus'),
+          tabBarButtonTestID: 'tab-focus',
           tabBarIcon: ({ color, size, focused }) => (
             <Ionicons name={focused ? 'timer' : 'timer-outline'} size={size} color={color} />
           ),
@@ -72,6 +78,7 @@ export default function TabsLayout() {
         name="habits"
         options={{
           title: t('tabs.habits'),
+          tabBarButtonTestID: 'tab-habits',
           tabBarIcon: ({ color, size, focused }) => (
             <Ionicons name={focused ? 'flame' : 'flame-outline'} size={size} color={color} />
           ),
@@ -81,6 +88,7 @@ export default function TabsLayout() {
         name="insights"
         options={{
           title: t('tabs.insights'),
+          tabBarButtonTestID: 'tab-insights',
           tabBarIcon: ({ color, size, focused }) => (
             <Ionicons name={focused ? 'stats-chart' : 'stats-chart-outline'} size={size} color={color} />
           ),

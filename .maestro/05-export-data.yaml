@@ -1,0 +1,42 @@
+# Flow 5 — export data.
+#
+# What this flow proves: Settings → Your data offers both export formats, and the
+# export pipeline actually runs — a backup file is built and written to disk,
+# and the screen reports it.
+#
+# **Why it drives "Back up now" instead of "Export JSON".** Both call the same
+# `buildBackup` + write path in `services/data/export.ts`; the difference is that
+# "Export JSON" then hands the file to the Android share chooser. That chooser is
+# a system window outside the app's view hierarchy, so whether it appears (and
+# what it is titled) depends on the device and its locale — the app's own status
+# line underneath it only becomes visible once the chooser is dismissed. Asserting
+# on it would be flaky on exactly the devices we cannot test here. The formats are
+# still asserted as present and enabled, and the round-trip serialization is
+# covered deterministically by `tests/export.test.ts`.
+appId: com.taskflow.app
+tags:
+  - smoke
+---
+- launchApp:
+    clearState: true
+- runFlow: subflows/dismiss-first-run.yaml
+
+- tapOn: "Open settings"
+- assertVisible: "Settings"
+
+# "Your data" is the last section of a long modal.
+- scrollUntilVisible:
+    element:
+      text: "Export every task, habit and list as JSON"
+    timeout: 20000
+
+# Both export formats, plus the import and restore affordances.
+- assertVisible: "Export every task, habit and list as JSON"
+- assertVisible: "Export tasks as CSV"
+- assertVisible: "Import from a TaskFlow backup"
+- assertVisible: "Restore the last local backup"
+- assertVisible: "Clear all local data"
+
+# The deterministic half of the export: no system UI, no destination to choose.
+- tapOn: "Write a local backup now"
+- assertVisible: "Local backup written on this device."

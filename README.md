@@ -282,6 +282,36 @@ CI ([`ci.yml`](.github/workflows/ci.yml)) runs typecheck, tests and the brand
 check on every push and pull request. The APK pipeline
 ([`android-apk.yml`](.github/workflows/android-apk.yml)) runs on `v*` tags.
 
+### End-to-end flows (Maestro)
+
+`.maestro/` holds five [Maestro](https://maestro.dev) flows that drive the real
+app on a device or emulator:
+
+| Flow | What it proves |
+| --- | --- |
+| `01-capture-a-task` | Typing `Email the invoice tomorrow 5pm #Work !high` shows a date, time, tag and priority chip as you type, and stores the title with those fragments removed |
+| `02-complete-a-task` | The checkbox completes the task, and the card moves to **Completed** with its label inverted |
+| `03-start-a-pomodoro` | Start → pause → start on the Focus control round-trips |
+| `04-check-in-a-habit` | Adding a starter habit and checking it in flips the check-in to **Undo today** |
+| `05-export-data` | Settings → Your data offers both export formats and a backup really is written to disk |
+
+Each flow starts from `launchApp: { clearState: true }`, so it runs against an
+empty database and dismisses the first-install tour itself. They target
+`testID`s and accessibility labels rather than screen positions, and every
+`testID` they use is verified to exist by `tests/maestro-flows.test.ts`.
+
+```bash
+maestro test .maestro                            # all five
+maestro test .maestro/01-capture-a-task.yaml     # just one
+maestro test --include-tags smoke .maestro       # the tagged subset
+```
+
+Build a debug APK and install it first (`npx expo run:android`), then start an
+emulator or plug in a device. **These are not part of the required CI**, because
+Maestro needs a device and an installed build: the workflow would spend minutes
+on emulator provisioning for a suite that the static checks above already guard
+against selector drift. Run them locally before a release tag.
+
 ## Environment (all optional)
 
 The app is fully functional with **zero configuration** — SQLite is the source

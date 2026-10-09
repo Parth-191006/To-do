@@ -1,0 +1,35 @@
+# Flow 2 — complete a task.
+#
+# The checkbox announces what tapping it will do, so the state change is
+# observable from the accessibility tree alone: after completion the same
+# control says it will *undo* the completion. A fresh install seeds no tasks, so
+# the only task on screen is the one this flow creates.
+appId: com.taskflow.app
+tags:
+  - smoke
+---
+- launchApp:
+    clearState: true
+- runFlow: subflows/dismiss-first-run.yaml
+
+# Seed one task with no date. "Anytime" sits above "Completed", so both the
+# task and its completed form stay within reach without scrolling.
+- tapOn:
+    id: "quick-add-input"
+- inputText: "Buy milk"
+- tapOn:
+    id: "quick-add-submit"
+
+- assertVisible: "Buy milk"
+
+# `toggleTaskLabel` builds this string in one place for the card, the detail
+# screen and the board — the curly quotes are part of it.
+- tapOn: "Mark “Buy milk” complete"
+
+# Completion moves the card into the "Completed" bucket and strikes it through.
+# The checkbox now offers the inverse, which is the app telling us the write
+# actually happened.
+- scrollUntilVisible:
+    element:
+      text: "Mark “Buy milk” not complete"
+    timeout: 20000

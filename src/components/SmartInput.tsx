@@ -224,6 +224,9 @@ export function SmartInput({ onSubmit, label = 'Quick add', autoFocus = false, h
           value={value}
           onChangeText={setValue}
           // Intentionally no placeholder: the card is already labelled.
+          // Stable handle for the Maestro flows: the visible header reads
+          // "QUICK ADD", so a text selector would be ambiguous.
+          testID="quick-add-input"
           autoFocus={autoFocus}
           multiline
           returnKeyType="done"
@@ -259,6 +262,7 @@ export function SmartInput({ onSubmit, label = 'Quick add', autoFocus = false, h
         <ScalePress
           onPress={handleSubmit}
           disabled={!hasContent || busy}
+          testID="quick-add-submit"
           accessibilityRole="button"
           accessibilityLabel={hasContent ? 'Add task' : 'Add task — type something first'}
           accessibilityState={{ disabled: !hasContent || busy }}

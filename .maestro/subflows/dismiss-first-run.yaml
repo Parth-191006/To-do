@@ -1,0 +1,18 @@
+# Fragment: get past the first-install overview.
+#
+# Every flow starts from `launchApp: { clearState: true }`, which wipes the
+# preferences database — so the tour is on screen the moment the app opens. It
+# is the only thing that covers the navigator on a cold install:
+# `configureNotifications()` registers the Android channels without asking for
+# permission, so no permission sheet arrives unprompted.
+#
+# Guarded rather than unconditional, so the fragment is still correct when it
+# runs against an install that has already been through the tour (or when a
+# single flow is run twice without clearing state).
+appId: com.taskflow.app
+---
+- runFlow:
+    when:
+      visible: "Skip the tour"
+    commands:
+      - tapOn: "Skip the tour"
