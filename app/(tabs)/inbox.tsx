@@ -11,6 +11,7 @@ import { TaskEditorSheet } from '@/components/TaskEditorSheet';
 import { Chip, EmptyState, Text } from '@/components/ui';
 import { findOrCreateTag } from '@/db/repositories/tags';
 import type { TaskWithTags } from '@/domain/types';
+import { t, tPlural, type StringKey } from '@/i18n';
 import { isOpen, sortByUrgency, topLevel } from '@/store/selectors';
 import { useStore } from '@/store/useStore';
 import { useTheme } from '@/theme/ThemeProvider';
@@ -18,11 +19,11 @@ import { selection, success, tapLight } from '@/utils/haptics';
 
 type Filter = 'all' | 'open' | 'overdue' | 'done';
 
-const FILTERS: { key: Filter; label: string }[] = [
-  { key: 'all', label: 'All' },
-  { key: 'open', label: 'Open' },
-  { key: 'overdue', label: 'Overdue' },
-  { key: 'done', label: 'Done' },
+const FILTERS: { key: Filter; label: StringKey }[] = [
+  { key: 'all', label: 'inbox.filterAll' },
+  { key: 'open', label: 'inbox.filterOpen' },
+  { key: 'overdue', label: 'inbox.filterOverdue' },
+  { key: 'done', label: 'inbox.filterDone' },
 ];
 
 export default function InboxScreen() {
@@ -180,12 +181,14 @@ export default function InboxScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
       <TabHeader
-        title="Inbox"
-        subtitle="Search, filter and bulk-edit everything you have captured."
+        title={t('tabs.inbox')}
+        subtitle={t('inbox.subtitle')}
         right={
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm }}>
             <Text variant="caption" color={theme.colors.textSecondary}>
-              {selecting ? `${selected.size} selected` : `${filtered.length} shown`}
+              {selecting
+                ? t('inbox.selectedCount', { count: selected.size })
+                : t('inbox.shownCount', { count: filtered.length })}
             </Text>
             {/* Multiselect entry point: a real control, not a hidden gesture. */}
             <Pressable
@@ -193,7 +196,9 @@ export default function InboxScreen() {
               disabled={filtered.length === 0}
               hitSlop={8}
               accessibilityRole="button"
-              accessibilityLabel={selecting ? 'Cancel selection' : 'Select multiple tasks'}
+              accessibilityLabel={
+                selecting ? t('inbox.cancelSelection') : t('inbox.selectMultiple')
+              }
               style={{
                 flexDirection: 'row',
                 alignItems: 'center',
@@ -214,7 +219,7 @@ export default function InboxScreen() {
                 variant="caption"
                 color={selecting ? theme.colors.accentContrast : theme.colors.textSecondary}
               >
-                {selecting ? 'Cancel' : 'Select'}
+                {selecting ? t('common.cancel') : t('inbox.select')}
               </Text>
             </Pressable>
           </View>
@@ -237,8 +242,8 @@ export default function InboxScreen() {
           <TextInput
             value={query}
             onChangeText={setQuery}
-            accessibilityLabel="Search tasks and notes"
-            placeholder="Search tasks and notes"
+            accessibilityLabel={t('inbox.searchPlaceholder')}
+            placeholder={t('inbox.searchPlaceholder')}
             placeholderTextColor={theme.colors.textTertiary}
             style={[theme.typography.body, { flex: 1, color: theme.colors.textPrimary, paddingVertical: 11 }]}
           />
@@ -247,7 +252,7 @@ export default function InboxScreen() {
               onPress={() => setQuery('')}
               hitSlop={8}
               accessibilityRole="button"
-              accessibilityLabel="Clear search"
+              accessibilityLabel={t('inbox.clearSearch')}
             >
               <Ionicons name="close-circle" size={16} color={theme.colors.textTertiary} />
             </Pressable>
@@ -277,7 +282,7 @@ export default function InboxScreen() {
                 variant="caption"
                 color={filter === entry.key ? theme.colors.accentContrast : theme.colors.textSecondary}
               >
-                {entry.label}
+                {t(entry.label)}
               </Text>
             </Pressable>
           ))}
@@ -330,11 +335,11 @@ export default function InboxScreen() {
         {filtered.length === 0 ? (
           <EmptyState
             icon="file-tray-outline"
-            title={query.trim() ? 'No matches' : 'Nothing here'}
+            title={query.trim() ? t('inbox.emptyNoMatches') : t('inbox.emptyNothingHere')}
             subtitle={
               query.trim()
-                ? `Nothing matches “${query.trim()}”. Try another word, or a different filter.`
-                : 'Try another filter, or add something from the Today tab.'
+                ? t('inbox.emptyNoMatchesBody', { query: query.trim() })
+                : t('inbox.emptyBody')
             }
             /*
              * "Go to Today" only appears when the Inbox is *genuinely* empty —
@@ -343,7 +348,7 @@ export default function InboxScreen() {
              */
             action={
               !query.trim() && filter === 'all' && !activeTagId
-                ? { label: 'Go to Today', onPress: () => router.push('/') }
+                ? { label: t('inbox.goToToday'), onPress: () => router.push('/') }
                 : undefined
             }
           />
@@ -366,7 +371,7 @@ export default function InboxScreen() {
                     onPress={() => toggleSelected(task.id)}
                     accessibilityRole="checkbox"
                     accessibilityState={{ checked: isSelected }}
-                    accessibilityLabel={`Select ${task.title}`}
+                    accessibilityLabel={t('inbox.selectTask', { title: task.title })}
                     style={{
                       position: 'absolute',
                       left: 0,
@@ -415,28 +420,28 @@ export default function InboxScreen() {
           }}
         >
           <Chip
-            label="Complete"
+            label={t('inbox.bulkComplete')}
             icon="checkmark-done-outline"
-            accessibilityLabel="Complete the selected tasks"
+            accessibilityLabel={t('inbox.bulkCompleteA11y')}
             onPress={() => void bulkComplete()}
           />
           <Chip
-            label="Move"
+            label={t('inbox.bulkMove')}
             icon="folder-outline"
-            accessibilityLabel="Move the selected tasks to a list"
+            accessibilityLabel={t('inbox.bulkMoveA11y')}
             onPress={() => setMoveOpen(true)}
           />
           <Chip
-            label="Tag"
+            label={t('inbox.bulkTag')}
             icon="pricetag-outline"
-            accessibilityLabel="Tag the selected tasks"
+            accessibilityLabel={t('inbox.bulkTagA11y')}
             onPress={() => setTagOpen(true)}
           />
           <Chip
-            label="Delete"
+            label={t('inbox.bulkDelete')}
             icon="trash-outline"
             color={theme.colors.danger}
-            accessibilityLabel="Delete the selected tasks"
+            accessibilityLabel={t('inbox.bulkDeleteA11y')}
             onPress={() => void bulkDelete()}
           />
         </View>
@@ -445,15 +450,15 @@ export default function InboxScreen() {
       <BottomSheet
         visible={moveOpen}
         onClose={() => setMoveOpen(false)}
-        title={`Move ${selected.size} task${selected.size === 1 ? '' : 's'}`}
-        subtitle="Pick the list they should live in."
+        title={tPlural('inbox.moveTitle', selected.size)}
+        subtitle={t('inbox.moveSubtitle')}
         heightRatio={0.6}
       >
         <View style={{ gap: theme.spacing.sm, paddingTop: theme.spacing.lg }}>
           <Chip
-            label="Inbox (no list)"
+            label={t('inbox.moveInbox')}
             icon="file-tray-outline"
-            accessibilityLabel="Move to the inbox"
+            accessibilityLabel={t('inbox.moveInboxA11y')}
             onPress={() => void bulkMove(null)}
           />
           {projects
@@ -463,7 +468,7 @@ export default function InboxScreen() {
                 key={project.id}
                 label={project.name}
                 color={project.color}
-                accessibilityLabel={`Move to ${project.name}`}
+                accessibilityLabel={t('inbox.moveTo', { name: project.name })}
                 onPress={() => void bulkMove(project.id)}
               />
             ))}
@@ -473,8 +478,8 @@ export default function InboxScreen() {
       <BottomSheet
         visible={tagOpen}
         onClose={() => setTagOpen(false)}
-        title={`Tag ${selected.size} task${selected.size === 1 ? '' : 's'}`}
-        subtitle="Tap a tag, or type a new one."
+        title={tPlural('inbox.tagTitle', selected.size)}
+        subtitle={t('inbox.tagSubtitle')}
         heightRatio={0.6}
       >
         <TagPicker
@@ -501,12 +506,12 @@ export default function InboxScreen() {
           }}
         >
           <Text variant="caption" color={theme.colors.textInverse} style={{ flex: 1 }}>
-            Task deleted
+            {t('inbox.deleted')}
           </Text>
           <Chip
-            label="Undo"
+            label={t('inbox.undo')}
             icon="arrow-undo-outline"
-            accessibilityLabel="Restore the deleted task"
+            accessibilityLabel={t('inbox.undoA11y')}
             onPress={() => {
               void restoreTask(undoId);
               setUndoId(null);
@@ -542,7 +547,7 @@ function TagPicker({
             key={tag.id}
             label={`#${tag.name}`}
             color={tag.color}
-            accessibilityLabel={`Add the tag ${tag.name}`}
+            accessibilityLabel={t('inbox.addTagNamedA11y', { name: tag.name })}
             onPress={() => onPick(tag.name)}
           />
         ))}
@@ -550,9 +555,9 @@ function TagPicker({
       <TextInput
         value={draft}
         onChangeText={setDraft}
-        placeholder="or a new tag name"
+        placeholder={t('inbox.newTagPlaceholder')}
         placeholderTextColor={theme.colors.textTertiary}
-        accessibilityLabel="New tag name"
+        accessibilityLabel={t('inbox.newTagA11y')}
         submitBehavior="submit"
         onSubmitEditing={() => {
           const trimmed = draft.trim();
@@ -571,10 +576,10 @@ function TagPicker({
       />
       <View style={{ flexDirection: 'row' }}>
         <Chip
-          label="Add tag"
+          label={t('inbox.addTag')}
           icon="add"
           selected
-          accessibilityLabel="Add the typed tag"
+          accessibilityLabel={t('inbox.addTagA11y')}
           onPress={() => {
             const trimmed = draft.trim();
             if (trimmed) onPick(trimmed);

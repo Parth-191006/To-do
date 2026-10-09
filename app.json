@@ -87,7 +87,8 @@
       ],
       "expo-font",
       "expo-asset",
-      "expo-sharing"
+      "expo-sharing",
+      "expo-localization"
     ],
     "experiments": {
       "typedRoutes": false

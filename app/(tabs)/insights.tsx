@@ -6,6 +6,7 @@ import { AnalyticsPanel } from '@/components/AnalyticsPanel';
 import { SkeletonList } from '@/components/Skeleton';
 import { TabHeader } from '@/components/TabHeader';
 import { Text } from '@/components/ui';
+import { t } from '@/i18n';
 import { useStore } from '@/store/useStore';
 import { useTheme } from '@/theme/ThemeProvider';
 import { selection } from '@/utils/haptics';
@@ -22,8 +23,8 @@ export default function InsightsScreen() {
     return (
       <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
         <TabHeader
-          title="Insights"
-          subtitle="Where your time and completions actually go."
+          title={t('tabs.insights')}
+          subtitle={t('insights.subtitle')}
         />
         <SkeletonList rows={3} />
       </View>
@@ -32,7 +33,7 @@ export default function InsightsScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
-      <TabHeader title="Insights" subtitle="Where your time and completions actually go." />
+      <TabHeader title={t('tabs.insights')} subtitle={t('insights.subtitle')} />
       <ScrollView
         contentContainerStyle={{
           paddingHorizontal: theme.spacing.lg,
@@ -62,6 +63,7 @@ export default function InsightsScreen() {
                 }}
                 accessibilityRole="button"
                 accessibilityState={{ selected: active }}
+                accessibilityLabel={t('insights.rangeDays', { days: range })}
               style={{
                 flex: 1,
                 alignItems: 'center',
@@ -84,7 +86,7 @@ export default function InsightsScreen() {
                 variant="micro"
                 color={active ? theme.colors.accent : theme.colors.textTertiary}
               >
-                {range} DAYS
+                {t('insights.rangeDays', { days: range })}
               </Text>
             </Pressable>
           );

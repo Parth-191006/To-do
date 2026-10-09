@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FocusTimer } from '@/components/FocusTimer';
 import { SkeletonList } from '@/components/Skeleton';
 import { TabHeader } from '@/components/TabHeader';
+import { t } from '@/i18n';
 import { useStore } from '@/store/useStore';
 import { useTheme } from '@/theme/ThemeProvider';
 
@@ -17,8 +18,8 @@ export default function FocusScreen() {
     return (
       <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
         <TabHeader
-          title="Focus"
-          subtitle="Pomodoro blocks linked to the task you are working on."
+          title={t('tabs.focus')}
+          subtitle={t('focus.subtitle')}
         />
         <SkeletonList rows={2} />
       </View>
@@ -28,8 +29,8 @@ export default function FocusScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
       <TabHeader
-        title="Focus"
-        subtitle="Pomodoro blocks linked to the task you are working on."
+        title={t('tabs.focus')}
+        subtitle={t('focus.subtitle')}
       />
       <ScrollView
         contentContainerStyle={{

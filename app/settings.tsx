@@ -9,6 +9,7 @@ import { BrandMark } from '@/components/BrandMark';
 import { BottomSheet } from '@/components/BottomSheet';
 import { Divider, Chip, Text } from '@/components/ui';
 import { resetDatabase } from '@/db/client';
+import { t, tPlural, type StringKey } from '@/i18n';
 import {
   exportCsv,
   exportJson,
@@ -44,10 +45,10 @@ import { useStore } from '@/store/useStore';
 import { useTheme, useThemePreference } from '@/theme/ThemeProvider';
 import type { ThemePreference } from '@/theme/ThemeProvider';
 
-const THEME_OPTIONS: { key: ThemePreference; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
-  { key: 'system', label: 'System', icon: 'phone-portrait-outline' },
-  { key: 'light', label: 'Light', icon: 'sunny-outline' },
-  { key: 'dark', label: 'Moon', icon: 'moon-outline' },
+const THEME_OPTIONS: { key: ThemePreference; label: StringKey; icon: keyof typeof Ionicons.glyphMap }[] = [
+  { key: 'system', label: 'settings.themeSystem', icon: 'phone-portrait-outline' },
+  { key: 'light', label: 'settings.themeLight', icon: 'sunny-outline' },
+  { key: 'dark', label: 'settings.themeMoon', icon: 'moon-outline' },
 ];
 
 export default function SettingsScreen() {
@@ -130,23 +131,23 @@ export default function SettingsScreen() {
   const handleSendSignInLink = useCallback(async () => {
     const email = signInEmail.trim();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      setSyncMessage('Enter a valid email address.');
+      setSyncMessage(t('settings.msgValidEmail'));
       return;
     }
     const { error } = await signInWithOtp(email);
     if (error) {
-      setSyncMessage(`Could not send the sign-in link — ${error}`);
+      setSyncMessage(t('settings.msgSignInFailed', { error: String(error) }));
       return;
     }
     setLinkSent(true);
-    setSyncMessage('Sign-in link sent — open it on this device to sign in.');
+    setSyncMessage(t('settings.msgSignInSent'));
   }, [signInEmail]);
 
   const handleSignOut = useCallback(async () => {
     await signOut().catch(() => undefined);
     setSessionEmail(null);
     setLinkSent(false);
-    setSyncMessage('Signed out on this device.');
+    setSyncMessage(t('settings.msgSignedOut'));
   }, []);
 
   /**
@@ -157,7 +158,7 @@ export default function SettingsScreen() {
   const handleEnableNotifications = useCallback(async () => {
     if (permission === 'denied') {
       await Linking.openSettings().catch(() => undefined);
-      setNotice('Turn on notifications for TaskFlow, then come back and re-arm your reminders.');
+      setNotice(t('settings.msgOpenSystemSettings'));
       return;
     }
     let granted = false;
@@ -165,12 +166,12 @@ export default function SettingsScreen() {
       granted = await ensureNotificationPermissions();
       if (granted) {
         await scheduleDailyDigest({ hour: 8, minute: 30 }).catch(() => undefined);
-        setNotice('Notifications enabled — your daily 8:30am digest is armed.');
+        setNotice(t('settings.msgNotificationsEnabled'));
       } else {
-        setNotice('Notification permission was not granted — allow it in system settings.');
+        setNotice(t('settings.msgPermissionNotGranted'));
       }
     } catch {
-      setNotice('Could not set up notifications on this device.');
+      setNotice(t('settings.msgNotificationsFailed'));
     }
     await refreshStatus();
   }, [permission, refreshStatus]);
@@ -178,12 +179,12 @@ export default function SettingsScreen() {
   const handleTestNotification = useCallback(async () => {
     const result = await sendTestNotification().catch(() => ({
       ok: false,
-      reason: 'Could not send a test notification on this device.',
+      reason: t('settings.msgTestFailedDevice'),
     }));
     setNotice(
       result.ok
-        ? 'Sending… you should see the banner in about 4 seconds. Lock the screen to be sure.'
-        : (result.reason ?? 'Could not send a test notification.'),
+        ? t('settings.msgTestSending')
+        : (result.reason ?? t('settings.msgTestFailed')),
     );
     await refreshStatus();
   }, [refreshStatus]);
@@ -197,7 +198,7 @@ export default function SettingsScreen() {
         const result = await scheduleTaskNotifications(task).catch(() => ({ scheduled: 0 }));
         count += result.scheduled;
       }
-      setNotice(`Re-armed ${count} reminder${count === 1 ? '' : 's'}.`);
+      setNotice(tPlural('settings.msgRearmed', count));
       await refreshStatus();
     } finally {
       setBusy(false);
@@ -210,8 +211,17 @@ export default function SettingsScreen() {
       const summary = await runSync();
       setSyncMessage(
         summary.skipped
-          ? `Nothing to sync — ${summary.reason}`
-          : `Pushed ${summary.pushed}, pulled ${summary.pulled}${summary.errors.length ? `, ${summary.errors.length} error(s)` : ''}`,
+          ? t('settings.msgNothingToSync', { reason: summary.reason ?? '' })
+          : summary.errors.length
+            ? t('settings.msgSyncedErrors', {
+                pushed: summary.pushed,
+                pulled: summary.pulled,
+                errors: summary.errors.length,
+              })
+            : t('settings.msgSynced', {
+                pushed: summary.pushed,
+                pulled: summary.pulled,
+              }),
       );
       await refreshStatus();
     } finally {
@@ -235,9 +245,9 @@ export default function SettingsScreen() {
         setDataNote(
           result.ok
             ? result.shared
-              ? `Exported (${kind.toUpperCase()}) — pick where to send it.`
-              : `Exported to ${result.uri}`
-            : (result.reason ?? 'Could not export.'),
+              ? t('settings.msgExportedShared', { format: kind.toUpperCase() })
+              : t('settings.msgExportedTo', { uri: result.uri ?? '' })
+            : (result.reason ?? t('settings.msgExportFailed')),
         );
       } finally {
         setBusy(false);
@@ -250,7 +260,9 @@ export default function SettingsScreen() {
     setBusy(true);
     try {
       const path = await writeLocalBackup();
-      setDataNote(path ? 'Local backup written on this device.' : 'Could not write the backup.');
+      setDataNote(
+        path ? t('settings.msgBackupWritten') : t('settings.msgBackupFailed'),
+      );
       await refreshBackupInfo();
     } finally {
       setBusy(false);
@@ -302,17 +314,17 @@ export default function SettingsScreen() {
     setBusy(true);
     try {
       if (!(await localBackupExists())) {
-        setDataNote('No local backup on this device yet — export one first.');
+        setDataNote(t('settings.msgNoLocalBackup'));
         return;
       }
       const text = await readLocalBackupText();
       if (!text) {
-        setDataNote('Could not read the local backup.');
+        setDataNote(t('settings.msgCouldNotReadBackup'));
         return;
       }
       await handleApplyImport(text);
     } catch {
-      setDataNote('Could not read the local backup.');
+      setDataNote(t('settings.msgCouldNotReadBackup'));
     } finally {
       setBusy(false);
     }
@@ -329,7 +341,7 @@ export default function SettingsScreen() {
       await cancelAllScheduled();
       await resetDatabase();
       await bootstrap();
-      setSyncMessage('Local data cleared — a backup was saved first.');
+      setSyncMessage(t('settings.msgCleared'));
       await refreshBackupInfo();
       await refreshStatus();
     } finally {
@@ -352,11 +364,11 @@ export default function SettingsScreen() {
           onPress={() => router.back()}
           hitSlop={10}
           accessibilityRole="button"
-          accessibilityLabel="Close settings"
+          accessibilityLabel={t('settings.close')}
         >
           <Ionicons name="close" size={22} color={theme.colors.textSecondary} />
         </Pressable>
-        <Text variant="title">Settings</Text>
+        <Text variant="title">{t('settings.title')}</Text>
       </View>
 
       <ScrollView
@@ -367,12 +379,12 @@ export default function SettingsScreen() {
         }}
         showsVerticalScrollIndicator={false}
       >
-        <Section title="Appearance" icon="color-palette-outline">
+        <Section title={t('settings.sectionAppearance')} icon="color-palette-outline">
           <View style={{ flexDirection: 'row', gap: theme.spacing.sm }}>
             {THEME_OPTIONS.map((option) => (
               <Chip
                 key={option.key}
-                label={option.label}
+                label={t(option.label)}
                 icon={option.icon}
                 selected={preference === option.key}
                 onPress={() => setPreference(option.key)}
@@ -381,7 +393,7 @@ export default function SettingsScreen() {
           </View>
         </Section>
 
-        <Section title="Notifications" icon="notifications-outline">
+        <Section title={t('settings.sectionNotifications')} icon="notifications-outline">
           <View
             style={{
               flexDirection: 'row',
@@ -401,44 +413,44 @@ export default function SettingsScreen() {
             <View style={{ flex: 1 }}>
               <Text variant="bodyStrong">
                 {permission === 'granted'
-                  ? 'Notifications are on'
+                  ? t('settings.notifOn')
                   : permission === 'denied'
-                    ? 'Notifications are blocked'
-                    : 'Notifications are not set up'}
+                    ? t('settings.notifBlocked')
+                    : t('settings.notifOff')}
               </Text>
               <Text variant="caption" color={theme.colors.textSecondary}>
                 {permission === 'granted'
-                  ? `${armed} reminder${armed === 1 ? '' : 's'} armed for later`
+                  ? tPlural('settings.notifArmed', armed)
                   : permission === 'denied'
-                    ? 'Android is blocking TaskFlow — open system settings to allow them.'
-                    : 'Allow them so reminders and focus alarms can reach you.'}
+                    ? t('settings.notifBlockedBody')
+                    : t('settings.notifOffBody')}
               </Text>
             </View>
           </View>
 
-          <Row label="Scheduled reminders" value={`${armed}`} />
-          <Row label="Unsynced changes" value={`${pending}`} />
+          <Row label={t('settings.rowScheduledReminders')} value={`${armed}`} />
+          <Row label={t('settings.rowUnsyncedChanges')} value={`${pending}`} />
 
           <View style={{ flexDirection: 'row', gap: theme.spacing.sm, flexWrap: 'wrap' }}>
             <Chip
               label={
                 permission === 'granted'
-                  ? 'Re-register digest'
+                  ? t('settings.chipReregisterDigest')
                   : permission === 'denied'
-                    ? 'Open system settings'
-                    : 'Enable notifications'
+                    ? t('settings.chipOpenSystemSettings')
+                    : t('settings.chipEnableNotifications')
               }
               icon={permission === 'denied' ? 'settings-outline' : 'alarm-outline'}
               selected={permission !== 'granted'}
               onPress={() => void handleEnableNotifications()}
             />
             <Chip
-              label="Send a test"
+              label={t('settings.chipSendTest')}
               icon="paper-plane-outline"
               onPress={() => void handleTestNotification()}
             />
             <Chip
-              label={busy ? 'Working…' : 'Re-arm all reminders'}
+              label={busy ? t('common.working') : t('settings.chipRearmAll')}
               icon="refresh"
               onPress={() => void handleRescheduleAll()}
             />
@@ -451,10 +463,8 @@ export default function SettingsScreen() {
           ) : null}
 
           <ToggleRow
-            label="Break through Do Not Disturb"
-            caption={
-              'Off by default. When on, high and urgent reminders use a separate channel that is allowed to make a sound and wake the screen while Do Not Disturb is on — use it for alerts you must not miss. Android only, and Android still shows the system control for it. Reminders already armed keep their old channel; press “Re-arm all reminders” to move them.'
-            }
+            label={t('settings.dndLabel')}
+            caption={t('settings.dndCaption')}
             value={dndBypass}
             onChange={(next) => {
               setDndBypass(next);
@@ -463,53 +473,55 @@ export default function SettingsScreen() {
           />
 
           <Text variant="micro" color={theme.colors.textTertiary}>
-            TASKFLOW POSTS TIME, RECURRING AND LOCATION ALERTS. COMPLETE, SNOOZE 5M / 1H / TOMORROW AND OPEN
-            ARE AVAILABLE STRAIGHT FROM THE BANNER. EACH URGENCY TIER IS ITS OWN CHANNEL — TUNE THEM UNDER
-            ANDROID SETTINGS › APPS › TASKFLOW › NOTIFICATIONS. IF A REMINDER ARRIVES A FEW MINUTES LATE,
-            ALLOW “ALARMS & REMINDERS” FOR TASKFLOW THERE TOO.
+            {t('settings.notifMicro')}
           </Text>
         </Section>
 
-        <Section title="Focus" icon="timer-outline">
+        <Section title={t('settings.sectionFocus')} icon="timer-outline">
           <ToggleRow
-            label="Auto-start breaks"
-            caption="When a focus block reaches zero, the break countdown starts right away instead of waiting for you to press start."
+            label={t('settings.autoStartBreakLabel')}
+            caption={t('settings.autoStartBreakCaption')}
             value={autoStartBreak}
             onChange={setAutoStartBreak}
           />
-          <Row label="Daily focus goal" value={`${dailyGoalMinutes} min`} />
+          <Row label={t('settings.rowDailyFocusGoal')} value={t('settings.minutesValue', { count: dailyGoalMinutes })} />
           <Row
-            label="Weekly task goal"
-            value={weeklyGoalTasks === 0 ? 'not set' : `${weeklyGoalTasks} tasks`}
+            label={t('settings.rowWeeklyTaskGoal')}
+            value={
+              weeklyGoalTasks === 0
+                ? t('settings.notSet')
+                : tPlural('settings.countTasks', weeklyGoalTasks)
+            }
           />
           <Text variant="caption" color={theme.colors.textSecondary}>
-            Change the daily goal, the long-break cycle and a custom focus or break length from the
-            Focus tab: tap “Custom”.
+            {t('settings.focusHint')}
           </Text>
           <Text variant="micro" color={theme.colors.textTertiary}>
-            THE BREAK KEEPS TIME AGAINST THE WALL CLOCK — LOCK THE SCREEN OR LEAVE THE APP AND IT STILL
-            COUNTS DOWN AND FIRES THE END ALERT.
+            {t('settings.focusMicro')}
           </Text>
         </Section>
 
-        <Section title="Sync" icon="cloud-outline">
-          <Row label="Backend" value={isSupabaseConfigured ? 'Supabase connected' : 'Local only'} />
-          <Row label="Pending changes" value={`${pending}`} />
+        <Section title={t('settings.sectionSync')} icon="cloud-outline">
+          <Row
+            label={t('settings.rowBackend')}
+            value={isSupabaseConfigured ? t('settings.backendConnected') : t('settings.backendLocal')}
+          />
+          <Row label={t('settings.rowPendingChanges')} value={`${pending}`} />
           {syncMessage ? (
             <Text variant="caption" color={theme.colors.textSecondary}>
               {syncMessage}
             </Text>
           ) : null}
           <View style={{ flexDirection: 'row', gap: theme.spacing.sm }}>
-            <Chip label={busy ? 'Working…' : 'Sync now'} icon="refresh" onPress={() => void handleSync()} />
+            <Chip label={busy ? t('common.working') : t('settings.chipSyncNow')} icon="refresh" onPress={() => void handleSync()} />
           </View>
 
           {isSupabaseConfigured ? (
             sessionEmail ? (
               <>
-                <Row label="Signed in as" value={sessionEmail} />
+                <Row label={t('settings.rowSignedInAs')} value={sessionEmail} />
                 <View style={{ flexDirection: 'row', gap: theme.spacing.sm }}>
-                  <Chip label="Sign out" icon="log-out-outline" onPress={() => void handleSignOut()} />
+                  <Chip label={t('settings.chipSignOut')} icon="log-out-outline" onPress={() => void handleSignOut()} />
                 </View>
               </>
             ) : (
@@ -517,8 +529,8 @@ export default function SettingsScreen() {
                 <TextInput
                   value={signInEmail}
                   onChangeText={setSignInEmail}
-                  accessibilityLabel="Email address"
-                  placeholder="you@example.com"
+                  accessibilityLabel={t('settings.emailA11y')}
+                  placeholder={t('settings.emailPlaceholder')}
                   placeholderTextColor={theme.colors.textTertiary}
                   keyboardType="email-address"
                   autoCapitalize="none"
@@ -538,7 +550,9 @@ export default function SettingsScreen() {
                 />
                 <View style={{ flexDirection: 'row', gap: theme.spacing.sm }}>
                   <Chip
-                    label={linkSent ? 'Link sent — check your inbox' : 'Send sign-in link'}
+                    label={
+                      linkSent ? t('settings.chipLinkSent') : t('settings.chipSendSignInLink')
+                    }
                     icon="mail-outline"
                     onPress={() => void handleSendSignInLink()}
                   />
@@ -548,39 +562,36 @@ export default function SettingsScreen() {
           ) : null}
           {!isSupabaseConfigured ? (
             <Text variant="micro" color={theme.colors.textTertiary}>
-              SET EXPO_PUBLIC_SUPABASE_URL AND EXPO_PUBLIC_SUPABASE_ANON_KEY TO ENABLE CLOUD SYNC AND SHARED
-              LISTS. THE APP IS FULLY FUNCTIONAL OFFLINE WITHOUT THEM.
+              {t('settings.syncMicro')}
             </Text>
           ) : null}
         </Section>
 
-        <Section title="Security" icon="lock-closed-outline">
+        <Section title={t('settings.sectionSecurity')} icon="lock-closed-outline">
           <ToggleRow
-            label="App lock"
-            caption="Ask for your fingerprint, face or device PIN when TaskFlow opens (and again after 30 seconds away). Uses the screen lock already on this phone — no TaskFlow password to remember."
+            label={t('settings.appLockLabel')}
+            caption={t('settings.appLockCaption')}
             value={appLock}
             onChange={setAppLock}
           />
         </Section>
 
-        <Section title="Your data" icon="server-outline">
-          <Row label="Projects" value={`${projects.length}`} />
-          <Row label="Tasks" value={`${tasks.length}`} />
-          <Row label="Habits" value={`${habits.length}`} />
+        <Section title={t('settings.sectionData')} icon="server-outline">
+          <Row label={t('settings.rowProjects')} value={`${projects.length}`} />
+          <Row label={t('settings.rowTasks')} value={`${tasks.length}`} />
+          <Row label={t('settings.rowHabits')} value={`${habits.length}`} />
           <Row
-            label="Local backup"
+            label={t('settings.rowLocalBackup')}
             value={
               backup.exists && backup.modifiedAt
                 ? new Date(backup.modifiedAt).toLocaleString()
-                : 'none yet'
+                : t('settings.backupNoneYet')
             }
           />
 
           <ToggleRow
-            label="Weekly automatic backup"
-            caption={
-              'Off by default. When TaskFlow opens and a week has passed, it writes a dated JSON copy into the app’s own backup folder and keeps the last four — so a bad week never overwrites a good copy. A copy written silently into your phone’s shared storage is not possible without a heavier dependency, so use Export JSON when you want the file somewhere else.'
-            }
+            label={t('settings.weeklyBackupLabel')}
+            caption={t('settings.weeklyBackupCaption')}
             value={weeklyBackup}
             onChange={(next) => {
               setWeeklyBackup(next);
@@ -588,42 +599,44 @@ export default function SettingsScreen() {
             }}
           />
           <Row
-            label="Last automatic backup"
-            value={lastBackupAt ? new Date(lastBackupAt).toLocaleString() : 'never'}
+            label={t('settings.rowLastBackup')}
+            value={
+              lastBackupAt ? new Date(lastBackupAt).toLocaleString() : t('settings.backupNever')
+            }
           />
 
           <View style={{ flexDirection: 'row', gap: theme.spacing.sm, flexWrap: 'wrap' }}>
             <Chip
-              label="Export JSON"
+              label={t('settings.chipExportJson')}
               icon="download-outline"
-              accessibilityLabel="Export every task, habit and list as JSON"
+              accessibilityLabel={t('settings.chipExportJsonA11y')}
               onPress={() => void handleExport('json')}
             />
             <Chip
-              label="Export CSV"
+              label={t('settings.chipExportCsv')}
               icon="grid-outline"
-              accessibilityLabel="Export tasks as CSV"
+              accessibilityLabel={t('settings.chipExportCsvA11y')}
               onPress={() => void handleExport('csv')}
             />
             <Chip
-              label="Import"
+              label={t('settings.chipImport')}
               icon="push-outline"
-              accessibilityLabel="Import from a TaskFlow backup"
+              accessibilityLabel={t('settings.chipImportA11y')}
               onPress={() => {
                 setDataNote(null);
                 setImportOpen(true);
               }}
             />
             <Chip
-              label={busy ? 'Working…' : 'Back up now'}
+              label={busy ? t('common.working') : t('settings.chipBackupNow')}
               icon="save-outline"
-              accessibilityLabel="Write a local backup now"
+              accessibilityLabel={t('settings.chipBackupNowA11y')}
               onPress={() => void handleBackupNow()}
             />
             <Chip
-              label="Restore backup"
+              label={t('settings.chipRestoreBackup')}
               icon="refresh-outline"
-              accessibilityLabel="Restore the last local backup"
+              accessibilityLabel={t('settings.chipRestoreBackupA11y')}
               onPress={() => void handleRestoreBackup()}
             />
           </View>
@@ -635,23 +648,17 @@ export default function SettingsScreen() {
           ) : null}
 
           <Text variant="caption" color={theme.colors.textSecondary}>
-            Privacy: everything you type lives in a SQLite database inside this app — tasks, notes,
-            habits, focus sessions, notification bookkeeping and your attached photos and voice notes.
-            Nothing is uploaded while you stay local; the only network calls this build can make are
-            the optional Supabase sync (only with your own credentials and after you sign in) and an
-            AI transcription or breakdown endpoint if you configured one. Backups written here are
-            files on this device, shared only when you choose a destination.
+            {t('settings.privacy')}
           </Text>
 
           <Text variant="micro" color={theme.colors.textTertiary}>
-            EXPORTS CARRY EVERY TASK, LIST, TAG AND HABIT (JSON) OR ONE ROW PER TASK (CSV). CLEARING
-            LOCAL DATA WRITES A BACKUP FIRST, SO IT CAN BE UNDONE.
+            {t('settings.dataMicro')}
           </Text>
           <Chip
-            label="Reset local data"
+            label={t('settings.chipReset')}
             icon="trash-outline"
             color={theme.colors.danger}
-            accessibilityLabel="Clear all local data"
+            accessibilityLabel={t('settings.chipResetA11y')}
             onPress={() => void handleReset()}
           />
         </Section>
@@ -662,18 +669,17 @@ export default function SettingsScreen() {
             <View style={{ flex: 1 }}>
               <Text variant="heading">TaskFlow</Text>
               <Text variant="caption" color={theme.colors.textSecondary}>
-                Capture, focus, finish.
+                {t('settings.tagline')}
               </Text>
             </View>
           </View>
           <Text variant="caption" color={theme.colors.textSecondary}>
-            Every feature ships unlocked: unlimited projects and subtasks, AI breakdown, location reminders,
-            actionable snooze, focus timer, habit analytics and themes. No paywall, no tiers.
+            {t('settings.aboutBody')}
           </Text>
           <Chip
-            label="Show the tour again"
+            label={t('settings.chipShowTour')}
             icon="school-outline"
-            accessibilityLabel="Replay the first-run overview"
+            accessibilityLabel={t('settings.chipShowTourA11y')}
             onPress={() => {
               // The overlay lives in the root layout, so turning the flag off is
               // all it takes for the tour to be back over this screen.
@@ -682,7 +688,7 @@ export default function SettingsScreen() {
           />
           <Divider />
           <Text variant="micro" color={theme.colors.textTertiary}>
-            VERSION {Constants.expoConfig?.version ?? '—'} · BUILT WITH EXPO + SQLITE + SUPABASE
+            {t('settings.versionMicro', { version: Constants.expoConfig?.version ?? '—' })}
           </Text>
         </Section>
       </ScrollView>
@@ -694,8 +700,8 @@ export default function SettingsScreen() {
       <BottomSheet
         visible={importOpen}
         onClose={() => setImportOpen(false)}
-        title="Import TaskFlow data"
-        subtitle="Paste a backup file, check what it would add, then apply it. Items already on this device are kept as they are."
+        title={t('settings.importTitle')}
+        subtitle={t('settings.importSubtitle')}
         heightRatio={0.7}
       >
         <View style={{ gap: theme.spacing.md, paddingTop: theme.spacing.lg }}>
@@ -710,7 +716,7 @@ export default function SettingsScreen() {
             multiline
             placeholder='{"version":1,"tasks":[…]}'
             placeholderTextColor={theme.colors.textTertiary}
-            accessibilityLabel="Paste backup JSON"
+            accessibilityLabel={t('settings.importPasteA11y')}
             style={[
               theme.typography.caption,
               {
@@ -725,24 +731,28 @@ export default function SettingsScreen() {
           />
           <View style={{ flexDirection: 'row', gap: theme.spacing.sm, flexWrap: 'wrap' }}>
             <Chip
-              label={busy ? 'Working…' : 'Check the file'}
+              label={busy ? t('common.working') : t('settings.chipCheckFile')}
               icon="search-outline"
               selected={importPlan === null}
-              accessibilityLabel="Check the pasted file"
+              accessibilityLabel={t('settings.chipCheckFileA11y')}
               onPress={() => void handleCheckImport(importText)}
             />
             {importPlan && importPlan.totalNew > 0 ? (
               <Chip
-                label={busy ? 'Importing…' : `Add ${importPlan.totalNew} item${importPlan.totalNew === 1 ? '' : 's'}`}
+                label={
+                  busy
+                    ? t('settings.chipImporting')
+                    : tPlural('settings.importAdd', importPlan.totalNew)
+                }
                 icon="push-outline"
                 selected
-                accessibilityLabel="Import the pasted data"
+                accessibilityLabel={t('settings.importAddA11y')}
                 onPress={() => void handleApplyImport(importText)}
               />
             ) : null}
             <Chip
-              label="Cancel"
-              accessibilityLabel="Cancel the import"
+              label={t('common.cancel')}
+              accessibilityLabel={t('settings.cancelImportA11y')}
               onPress={() => {
                 setImportOpen(false);
                 setImportPlan(null);

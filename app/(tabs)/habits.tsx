@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { HabitTracker } from '@/components/HabitTracker';
 import { SkeletonList } from '@/components/Skeleton';
 import { TabHeader } from '@/components/TabHeader';
+import { t } from '@/i18n';
 import { useStore } from '@/store/useStore';
 import { useTheme } from '@/theme/ThemeProvider';
 
@@ -19,7 +20,7 @@ export default function HabitsScreen() {
   if (status === 'loading' || status === 'idle') {
     return (
       <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
-        <TabHeader title="Habits" subtitle="Daily check-ins, streaks and a 5-week heatmap." />
+        <TabHeader title={t('tabs.habits')} subtitle={t('habits.subtitle')} />
         <SkeletonList rows={3} />
       </View>
     );
@@ -27,7 +28,7 @@ export default function HabitsScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
-      <TabHeader title="Habits" subtitle="Daily check-ins, streaks and a 5-week heatmap." />
+      <TabHeader title={t('tabs.habits')} subtitle={t('habits.subtitle')} />
       <ScrollView
         contentContainerStyle={{
           paddingHorizontal: theme.spacing.lg,

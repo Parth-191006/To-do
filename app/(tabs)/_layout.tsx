@@ -4,6 +4,7 @@ import React from 'react';
 import { StyleSheet, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { t } from '@/i18n';
 import { tabBarHeight } from '@/utils/a11y';
 import { useTheme } from '@/theme/ThemeProvider';
 
@@ -43,7 +44,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Today',
+          title: t('tabs.today'),
           tabBarIcon: ({ color, size, focused }) => (
             <Ionicons name={focused ? 'today' : 'today-outline'} size={size} color={color} />
           ),
@@ -52,7 +53,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="inbox"
         options={{
-          title: 'Inbox',
+          title: t('tabs.inbox'),
           tabBarIcon: ({ color, size, focused }) => (
             <Ionicons name={focused ? 'file-tray' : 'file-tray-outline'} size={size} color={color} />
           ),
@@ -61,7 +62,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="focus"
         options={{
-          title: 'Focus',
+          title: t('tabs.focus'),
           tabBarIcon: ({ color, size, focused }) => (
             <Ionicons name={focused ? 'timer' : 'timer-outline'} size={size} color={color} />
           ),
@@ -70,7 +71,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="habits"
         options={{
-          title: 'Habits',
+          title: t('tabs.habits'),
           tabBarIcon: ({ color, size, focused }) => (
             <Ionicons name={focused ? 'flame' : 'flame-outline'} size={size} color={color} />
           ),
@@ -79,7 +80,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="insights"
         options={{
-          title: 'Insights',
+          title: t('tabs.insights'),
           tabBarIcon: ({ color, size, focused }) => (
             <Ionicons name={focused ? 'stats-chart' : 'stats-chart-outline'} size={size} color={color} />
           ),

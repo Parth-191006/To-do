@@ -4,6 +4,7 @@ import React, { useEffect, useRef } from 'react';
 import { Animated, Easing, Pressable, View } from 'react-native';
 
 import { BrandMark } from '@/components/BrandMark';
+import { t } from '@/i18n';
 import { SkeletonList } from '@/components/Skeleton';
 import { TabHeader } from '@/components/TabHeader';
 import { TaskDashboard } from '@/components/TaskDashboard';
@@ -28,7 +29,7 @@ export default function TodayScreen() {
         right={
           <Pressable
             onPress={() => router.push('/settings')}
-            accessibilityLabel="Open settings"
+            accessibilityLabel={t('today.openSettings')}
             accessibilityRole="button"
             style={{
               width: 48,
@@ -105,7 +106,7 @@ function OpeningWorkspace() {
           <BrandMark size={72} />
         </Animated.View>
         <Text variant="caption" color={theme.colors.textSecondary}>
-          Opening your workspace…
+          {t('today.opening')}
         </Text>
       </View>
       <View style={{ paddingTop: theme.spacing.xl }}>
