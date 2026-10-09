@@ -20,6 +20,7 @@ import {
 } from '@/services/data/export';
 import * as FileSystem from 'expo-file-system/legacy';
 import {
+  applyDndBypassPreference,
   cancelAllScheduled,
   ensureNotificationPermissions,
   getPermissionStatus,
@@ -61,6 +62,8 @@ export default function SettingsScreen() {
   const setAutoStartBreak = usePreferences((state) => state.setAutoStartBreak);
   const appLock = usePreferences((state) => state.appLock);
   const setAppLock = usePreferences((state) => state.setAppLock);
+  const dndBypass = usePreferences((state) => state.dndBypass);
+  const setDndBypass = usePreferences((state) => state.setDndBypass);
   const dailyGoalMinutes = usePreferences((state) => state.dailyGoalMinutes);
   const weeklyGoalTasks = usePreferences((state) => state.weeklyGoalTasks);
 
@@ -406,10 +409,23 @@ export default function SettingsScreen() {
             </Text>
           ) : null}
 
+          <ToggleRow
+            label="Break through Do Not Disturb"
+            caption={
+              'Off by default. When on, high and urgent reminders use a separate channel that is allowed to make a sound and wake the screen while Do Not Disturb is on — use it for alerts you must not miss. Android only, and Android still shows the system control for it. Reminders already armed keep their old channel; press “Re-arm all reminders” to move them.'
+            }
+            value={dndBypass}
+            onChange={(next) => {
+              setDndBypass(next);
+              void applyDndBypassPreference(next);
+            }}
+          />
+
           <Text variant="micro" color={theme.colors.textTertiary}>
             TASKFLOW POSTS TIME, RECURRING AND LOCATION ALERTS. COMPLETE, SNOOZE 5M / 1H / TOMORROW AND OPEN
-            ARE AVAILABLE STRAIGHT FROM THE BANNER. URGENT TASKS USE A HIGH-PRIORITY CHANNEL — TUNE
-            EACH ONE UNDER ANDROID SETTINGS › APPS › TASKFLOW › NOTIFICATIONS.
+            ARE AVAILABLE STRAIGHT FROM THE BANNER. EACH URGENCY TIER IS ITS OWN CHANNEL — TUNE THEM UNDER
+            ANDROID SETTINGS › APPS › TASKFLOW › NOTIFICATIONS. IF A REMINDER ARRIVES A FEW MINUTES LATE,
+            ALLOW “ALARMS & REMINDERS” FOR TASKFLOW THERE TOO.
           </Text>
         </Section>
 

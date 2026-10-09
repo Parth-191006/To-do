@@ -21,6 +21,7 @@ import {
   configureNotificationChannels,
   registerNotificationCategories,
 } from './categories';
+import { channelForPriority, DEFAULT_CHANNEL, isDndBypassEnabled } from './channelPrefs';
 
 /**
  * Local Notification Scheduling Service.
@@ -36,14 +37,6 @@ import {
  * 4. Provide snooze primitives used by the actionable notification buttons.
  */
 
-const CHANNEL_BY_PRIORITY: Record<Priority, string> = {
-  none: 'taskflow-default',
-  low: 'taskflow-default',
-  medium: 'taskflow-default',
-  high: 'taskflow-urgent',
-  urgent: 'taskflow-urgent',
-};
-
 const MINUTE = 60_000;
 
 /**
@@ -52,13 +45,17 @@ const MINUTE = 60_000;
  * registered first. Cheap and idempotent. The first call after a cold start may
  * run before `configureNotifications()` settles, which is exactly the race this
  * closes.
+ *
+ * The Do Not Disturb tier is registered from the same preference the routing
+ * below reads, so an urgent alert can never be addressed to a channel that was
+ * not created.
  */
 async function readyChannels(): Promise<void> {
   // Channels must exist or Android silently drops the post; categories must
   // exist or the banner arrives with no action buttons ("options"). Both are
   // cheap and idempotent, so we re-assert them right before every schedule
   // rather than trusting that the cold-start boot sequence finished first.
-  await configureNotificationChannels().catch(() => undefined);
+  await configureNotificationChannels({ dndBypass: isDndBypassEnabled() }).catch(() => undefined);
   await registerNotificationCategories().catch(() => undefined);
 }
 
@@ -199,7 +196,8 @@ export async function scheduleTaskNotifications(task: TaskWithTags): Promise<Sch
 
   await readyChannels();
 
-  const channelId = CHANNEL_BY_PRIORITY[task.priority];
+  const channelId = channelForPriority(task.priority);
+  const urgent = task.priority === 'high' || task.priority === 'urgent';
   const plans: { at: Date; title: string; body: string; kind: 'task_reminder' | 'task_due' }[] = [];
 
   if (task.remindAt) {
@@ -235,7 +233,7 @@ export async function scheduleTaskNotifications(task: TaskWithTags): Promise<Sch
         body: plan.body,
         categoryIdentifier: CATEGORY_TASK,
         sound: 'default',
-        color: channelId === 'taskflow-urgent' ? '#F43F5E' : '#0D9488',
+        color: urgent ? '#F43F5E' : '#0D9488',
         priority: priorityOrder(task.priority),
         interruptionLevel: interruptionLevel(task.priority),
         data: {
@@ -299,7 +297,7 @@ export async function snoozeTask(
     trigger: {
       type: Notifications.SchedulableTriggerInputTypes.DATE,
       date: when,
-      channelId: 'taskflow-default',
+      channelId: DEFAULT_CHANNEL,
     },
   });
 
@@ -477,7 +475,7 @@ export async function sendTestNotification(
     trigger: {
       type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
       seconds: Math.max(1, delaySeconds),
-      channelId: Platform.OS === 'android' ? 'taskflow-default' : undefined,
+      channelId: Platform.OS === 'android' ? DEFAULT_CHANNEL : undefined,
     },
   });
   return { ok: true };

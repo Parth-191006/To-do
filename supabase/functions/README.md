@@ -6,6 +6,14 @@ the app — with no backend configured the app runs entirely on device.
 | Function | Used by | Purpose |
 | --- | --- | --- |
 | [`ai-breakdown/`](ai-breakdown/) | **Break down with AI** | Authenticated, rate-limited proxy that holds the model key so it never ships in the APK. |
+| [`transcribe-audio/`](transcribe-audio/) | **Voice capture** | Same four layers, its own per-user budget, and a size/type gate before any audio reaches the provider. |
+
+Both functions refuse to run without a real user: an endpoint URL is public by
+design (it is compiled into the bundle), so authentication — not obscurity — is
+what keeps it from becoming an open proxy on someone else's bill. The app sends
+its Supabase access token on every request (`src/services/ai/authHeaders.ts`),
+and falls back to the on-device planner / keeps the recording as an attachment
+when the answer is not a 2xx.
 
 ---
 
@@ -92,6 +100,47 @@ curl -X POST "https://<project-ref>.functions.supabase.co/ai-breakdown" \
   -H "authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
   -d '{"title":"Write the quarterly report","priority":"high","maxSteps":5}'
 # expect {"steps":[…]}   ·   expect 401 without the header   ·   expect 429 over the quota
+```
+
+---
+
+## `transcribe-audio` — voice capture
+
+Same shape, different input: `multipart/form-data` with the recording instead of
+JSON, and an `Authorization: Bearer <Supabase access token>` header like every
+other request the app makes to a proxy.
+
+```jsonc
+// POST /functions/v1/transcribe-audio   (multipart/form-data)
+//   file      the recording (audio/*, ≤ 12 MB)
+//   language  optional BCP-47 hint
+
+// 200 OK
+{ "text": "call the plumber tomorrow at nine" }
+```
+
+Anything else — 401, 413, 415, 429, 502 — makes
+`src/services/ai/transcribe.ts` return `null`, and the caller keeps the audio as
+an attachment on the task. A voice note is never dropped.
+
+| # | Layer | What stops a stranger with the URL |
+| --- | --- | --- |
+| 1 | `verify_jwt` | Rejects requests with no/invalid Supabase JWT. |
+| 2 | `admin.auth.getUser(token)` | Requires a *real* user, so the check cannot be skipped by hitting a non-gateway path. |
+| 3 | `consume_api_budget(user, 'transcribe', limit)` | 6 requests per user per minute by default, in Postgres, `service_role` only — a separate bucket from the AI breakdown, because audio is what costs money per minute. |
+| 4 | `OPENAI_API_KEY` + size and MIME gates | The key is a Supabase secret; the 12 MB cap and the audio-only allow-list are applied before the provider is called. |
+
+```bash
+supabase functions deploy transcribe-audio
+supabase secrets set OPENAI_API_KEY=sk-… \
+  TRANSCRIBE_MODEL=whisper-1 \
+  TRANSCRIBE_API_URL=https://api.openai.com/v1/audio/transcriptions \
+  TRANSCRIBE_RATE_LIMIT_PER_MINUTE=6
+```
+
+```bash
+# .env — the URL is public by design; the key is not.
+EXPO_PUBLIC_TRANSCRIBE_ENDPOINT=https://<project-ref>.functions.supabase.co/transcribe-audio
 ```
 
 ### Without Supabase

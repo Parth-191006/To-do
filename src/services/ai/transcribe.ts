@@ -1,5 +1,8 @@
 import Constants from 'expo-constants';
 
+import { bearerHeaders } from './authHeaders';
+import { readBearerToken } from './session';
+
 /**
  * Speech-to-text for the voice quick-add.
  *
@@ -8,6 +11,12 @@ import Constants from 'expo-constants';
  * proxies Whisper (or any compatible service). When it is not configured we
  * return `null` and the caller keeps the audio as an attachment instead of
  * silently dropping the user's input.
+ *
+ * The endpoint is never an open proxy: it validates the caller's Supabase
+ * token, applies a per-user quota and holds the provider key server-side (see
+ * `supabase/functions/transcribe-audio`). Audio is the most expensive thing the
+ * app can send, so it is the *least* appropriate thing to leave callable
+ * anonymously.
  */
 
 function resolveEndpoint(): string | null {
@@ -41,6 +50,8 @@ export async function transcribeAudioFile(
 
     const response = await fetch(endpoint, {
       method: 'POST',
+      // No Content-Type on purpose: the runtime sets the multipart boundary.
+      headers: { ...bearerHeaders(await readBearerToken()) },
       body: form,
       signal: options.signal,
     });

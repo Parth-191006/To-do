@@ -41,9 +41,16 @@ const COPY: Record<string, Copy> = {
   location: {
     icon: 'location-outline',
     title: 'Place reminders need location',
-    body: 'A place reminder watches for your arrival or departure — for example “when I reach the office”. Android asks for “all the time” access for this; without it the reminder stays off until you open the app.',
+    body: 'A place reminder watches for your arrival or departure — for example “when I reach the office”. TaskFlow only reads your position when the OS reports a crossing of a place you saved.',
     allow: 'Allow location',
     deny: 'Not now',
+  },
+  backgroundLocation: {
+    icon: 'navigate-outline',
+    title: 'Keep watching while the app is closed?',
+    body: 'The next Android dialog asks for “all the time” access. That is what lets a place reminder fire while TaskFlow is closed or the phone is in your pocket — the crossing of a saved place is reported by the system, and TaskFlow is woken for it. Choose “While using the app” instead and your place reminders simply stay off until you next open TaskFlow. Location history is not recorded, and no position ever leaves the device.',
+    allow: 'Allow “all the time”',
+    deny: 'Only while using',
   },
   microphone: {
     icon: 'mic-outline',

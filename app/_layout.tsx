@@ -10,12 +10,14 @@ import { AppLock } from '@/components/AppLock';
 import { PermissionGate } from '@/components/PermissionSheet';
 import { Text } from '@/components/ui';
 import {
+  applyDndBypassPreference,
   configureNotifications,
   consumeInitialNotificationResponse,
   subscribeToNotificationResponses,
   type NotificationOutcome,
 } from '@/services/notifications';
 import { completeSignInFromUrl, isSupabaseConfigured } from '@/services/supabase/client';
+import { usePreferences } from '@/store/usePreferences';
 import { useStore } from '@/store/useStore';
 import { ThemeProvider, useTheme } from '@/theme/ThemeProvider';
 
@@ -33,6 +35,15 @@ export default function RootLayout() {
     void configureNotifications();
     void bootstrap();
   }, [bootstrap]);
+
+  // The Do Not Disturb choice has to reach the notification layer before
+  // anything is scheduled. The preference is restored from disk asynchronously,
+  // so this effect runs twice on a cold start: once with the default (off) and
+  // again when the stored value lands. Both calls are idempotent.
+  const dndBypass = usePreferences((state) => state.dndBypass);
+  useEffect(() => {
+    void applyDndBypassPreference(dndBypass);
+  }, [dndBypass]);
 
   /**
    * Actionable notification taps mutate data outside React, so we always

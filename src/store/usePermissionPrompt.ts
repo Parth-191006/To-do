@@ -12,7 +12,12 @@ import { create } from 'zustand';
  * and the UI stays in one place.
  */
 
-export type PermissionKind = 'notifications' | 'location' | 'microphone' | 'photos';
+export type PermissionKind =
+  | 'notifications'
+  | 'location'
+  | 'backgroundLocation'
+  | 'microphone'
+  | 'photos';
 
 interface PendingPrompt {
   kind: PermissionKind;

@@ -333,15 +333,24 @@ refresh — the UI never has to poll.
 `high` and `urgent` tasks are routed to a dedicated channel and interruption
 level:
 
-- **Android** — the `taskflow-urgent` channel is created with
-  `importance: MAX` and **`bypassDnd: true`**.
+- **Android** — a heads-up channel (`taskflow-high`) with `importance: MAX` that
+  still respects Do Not Disturb, plus an **opt-in** channel
+  (`taskflow-urgent-dnd`) with `bypassDnd: true` that is created only after the
+  user turns on Settings → Notifications → *Break through Do Not Disturb*.
+  `bypassDnd` is a *creation-time* flag Android never updates, so the opt-in
+  tier has to be a separate channel rather than a property of the first one; and
+  the id older builds used (`taskflow-urgent`, created with the flag on) is
+  simply never written to again, because it cannot be turned off in place.
 - **iOS** — content is scheduled with `interruptionLevel: 'timeSensitive'`,
   which breaks through Focus modes. `'critical'` is available in the type system
   but requires a special Apple entitlement, so it is intentionally not used by
   default.
 
-Four channels total (`default`, `urgent`, `focus`, `habits`) so users can tune
-each tier in system settings without losing the others.
+Four channels exist by default (`default`, `high`, `focus`, `habits`); the
+bypassing one is a fifth, and only while the preference is on. The routing rule
+itself lives in [`src/services/notifications/channelPrefs.ts`](src/services/notifications/channelPrefs.ts)
+— pure and unit-tested, because "nothing lands on a bypassing channel unless the
+user asked" is exactly the kind of claim that should be pinned.
 
 ### Geofenced reminders
 
@@ -395,10 +404,20 @@ on-device planner takes over. See
 [`supabase/functions/README.md`](supabase/functions/README.md).
 
 **Voice capture** (`services/ai/transcribe.ts`) records with `expo-audio`. If a
-transcription endpoint is configured the audio is posted and the transcript is
-appended to the input; if not, the recording is **kept as an audio attachment**
-instead of being discarded. Losing a user's spoken thought silently would be
-worse than not transcribing it.
+transcription endpoint is configured the audio is posted — with the same
+`Authorization: Bearer <access token>` header as the breakdown call — and the
+transcript is appended to the input; if not, the recording is **kept as an audio
+attachment** instead of being discarded. Losing a user's spoken thought silently
+would be worse than not transcribing it.
+
+**Neither endpoint is callable anonymously.** Both are Edge Functions that
+verify the Supabase JWT, resolve the user, spend that user's per-minute budget in
+Postgres and only then call the provider with a server-side key; the transcribe
+proxy additionally caps the body at 12 MB and accepts audio MIME types only.
+Any non-2xx answer is treated as "no answer": the breakdown falls back to the
+planner, the recording stays an attachment. The shared client-side half of this
+is `services/ai/authHeaders.ts` (pure, unit-tested) and `services/ai/session.ts`
+(the token read).
 
 ---
 
@@ -548,8 +567,11 @@ user can see exactly what would leave the device.
 
 **What leaves the device for AI.** Nothing unless `EXPO_PUBLIC_AI_ENDPOINT` is
 configured, and then only the title, notes, estimate and priority of the task
-being broken down. The model key itself lives server-side in
-`supabase/functions/`, never in the binary — see [§7](#7-ai-features).
+being broken down. Voice notes leave only when
+`EXPO_PUBLIC_TRANSCRIBE_ENDPOINT` is configured and a recording is made — and
+both proxies require a signed-in user, so a configured endpoint is not an open
+door. The model key itself lives server-side in `supabase/functions/`, never in
+the binary — see [§7](#7-ai-features) and [`SECURITY.md`](SECURITY.md).
 
 **Permissions are requested on first use, with an explanation first.**
 Notification, microphone, camera, photo-library, precise location and

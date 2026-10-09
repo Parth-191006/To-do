@@ -1,6 +1,13 @@
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 
+import {
+  DEFAULT_CHANNEL,
+  HIGH_CHANNEL,
+  HIGH_DND_CHANNEL,
+  setDndBypassPreference,
+} from './channelPrefs';
+
 /**
  * Actionable notification setup.
  *
@@ -93,11 +100,20 @@ export async function registerNotificationCategories(): Promise<void> {
   ]);
 }
 
-/** Android channels — one per urgency tier so users can tune them in Settings. */
-export async function configureNotificationChannels(): Promise<void> {
+/**
+ * Android channels — one per urgency tier so users can tune them in Settings.
+ *
+ * `bypassDnd` is a *creation-time* flag: Android ignores it on every later call
+ * for the same channel id, which is why the opt-in tier is a separate channel
+ * (`HIGH_DND_CHANNEL`) rather than a property of `HIGH_CHANNEL`. When the
+ * preference is off — the default — that channel is never created at all.
+ */
+export async function configureNotificationChannels(
+  options: { dndBypass?: boolean } = {},
+): Promise<void> {
   if (Platform.OS !== 'android') return;
 
-  await Notifications.setNotificationChannelAsync('taskflow-default', {
+  await Notifications.setNotificationChannelAsync(DEFAULT_CHANNEL, {
     name: 'Task reminders',
     importance: Notifications.AndroidImportance.DEFAULT,
     description: 'Standard task and project reminders.',
@@ -105,15 +121,28 @@ export async function configureNotificationChannels(): Promise<void> {
     lightColor: '#0D9488',
   });
 
-  // Urgent tasks bypass Do Not Disturb where the OS permission allows it.
-  await Notifications.setNotificationChannelAsync('taskflow-urgent', {
-    name: 'Urgent reminders',
+  // High and urgent tasks get a heads-up banner, but respect Do Not Disturb.
+  await Notifications.setNotificationChannelAsync(HIGH_CHANNEL, {
+    name: 'High-priority reminders',
     importance: Notifications.AndroidImportance.MAX,
-    bypassDnd: true,
-    description: 'Critical task alerts that break through Do Not Disturb.',
+    bypassDnd: false,
+    description: 'Heads-up alerts for high and urgent tasks. Respects Do Not Disturb.',
     vibrationPattern: [0, 400, 200, 400],
     lightColor: '#F43F5E',
   });
+
+  // Only while the user has asked for it in Settings → Notifications.
+  if (options.dndBypass) {
+    await Notifications.setNotificationChannelAsync(HIGH_DND_CHANNEL, {
+      name: 'Urgent reminders (breaks through DND)',
+      importance: Notifications.AndroidImportance.MAX,
+      bypassDnd: true,
+      description:
+        'High and urgent task alerts that break through Do Not Disturb. Turned on in TaskFlow settings.',
+      vibrationPattern: [0, 400, 200, 400],
+      lightColor: '#F43F5E',
+    });
+  }
 
   await Notifications.setNotificationChannelAsync('taskflow-focus', {
     name: 'Focus timer',
@@ -130,4 +159,19 @@ export async function configureNotificationChannels(): Promise<void> {
     vibrationPattern: [0, 120],
     lightColor: '#0EA5E9',
   });
+}
+
+/**
+ * Applies the user's Do Not Disturb choice.
+ *
+ * Called on boot (the preference is restored from disk) and from the Settings
+ * switch. Reminders already scheduled keep the channel they were armed with —
+ * onChangeVisibleNotificationChannel is not a thing Android offers — so the
+ * Settings copy says the change applies to reminders armed from here on, and
+ * the screen re-arms them straight away.
+ */
+export async function applyDndBypassPreference(enabled: boolean): Promise<void> {
+  setDndBypassPreference(enabled);
+  if (Platform.OS !== 'android') return;
+  await configureNotificationChannels({ dndBypass: enabled }).catch(() => undefined);
 }

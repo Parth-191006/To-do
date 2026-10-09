@@ -298,6 +298,14 @@ The anon key is public by design and protected by row-level security. **Never
 put a model API key in an `EXPO_PUBLIC_*` variable** — those values are
 compiled into the bundle. Keep model keys in the edge function.
 
+Both AI endpoints require a signed-in user: the app sends its Supabase access
+token with every request, and the sample functions in
+[`supabase/functions/`](supabase/functions/) answer `401` without one, spend a
+per-user, per-minute budget in Postgres, and only then call the provider with a
+server-side key. A configured endpoint URL is therefore not an open door. Every
+variable the app reads, and what a stranger can do with it, is listed in
+[`SECURITY.md`](SECURITY.md).
+
 Create a `.env` (or `app.json` → `expo.extra`) with any of the above. For the
 backend, run the migrations in [`supabase/migrations/`](supabase/migrations/)
 in order — they create every table, the row-level security policies, the
@@ -445,10 +453,12 @@ Yes — see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Platform notes
 
-- **Android** creates four notification channels (`reminders`, `urgent`,
-  `focus`, `habits`); the urgent channel requests `bypassDnd`. Exact-alarm and
+- **Android** creates four notification channels (`default`, `high`, `focus`,
+  `habits`). A fifth, allowed to break through Do Not Disturb, appears only if
+  you switch it on in Settings → Notifications. Exact-alarm and
   background-location permissions are declared in [`app.json`](app.json) and
-  requested at runtime only when the matching feature is first used.
+  requested at runtime only when the matching feature is first used — the
+  background-location dialog is preceded by its own explanation screen.
 - **iOS** uses `interruptionLevel: 'timeSensitive'` for urgent tasks;
   `'critical'` alerts require a special Apple entitlement and are not used.
 - Haptics and location features are silently skipped on platforms or devices

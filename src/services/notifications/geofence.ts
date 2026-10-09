@@ -71,7 +71,19 @@ export async function requestLocationPermissions(): Promise<boolean> {
 
   const foreground = await Location.requestForegroundPermissionsAsync();
   if (!foreground.granted) return false;
-  // Geofencing keeps working in the background, which iOS grants separately.
+
+  // Foreground access already covers "where am I now" (saving a place, showing
+  // the map) but not a fence that has to fire in the background. iOS and
+  // Android 11+ both gate that behind a second, separate dialog, so it gets its
+  // own explanation rather than being stapled to the first one: choosing "while
+  // using the app" is a legitimate answer, and the geofences then stay off
+  // while everything else keeps working.
+  const alreadyGranted = await Location.getBackgroundPermissionsAsync().catch(() => null);
+  if (alreadyGranted?.granted) return true;
+
+  const wantsBackground = await requestPermissionWithPrimer('backgroundLocation');
+  if (!wantsBackground) return false;
+
   const background = await Location.requestBackgroundPermissionsAsync();
   return background.granted;
 }

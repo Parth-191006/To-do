@@ -15,6 +15,7 @@ const LONG_BREAK_EVERY_KEY = 'taskflow.focus.longBreakEvery';
 const LONG_BREAK_MINUTES_KEY = 'taskflow.focus.longBreakMinutes';
 const ROUNDS_KEY = 'taskflow.focus.roundsCompleted';
 const APP_LOCK_KEY = 'taskflow.security.appLock';
+const DND_BYPASS_KEY = 'taskflow.notifications.dndBypass';
 const WEEKLY_GOAL_KEY = 'taskflow.insights.weeklyGoalTasks';
 const TEMPLATES_KEY = 'taskflow.capture.templates';
 const LAST_TASK_KEY = 'taskflow.capture.lastTask';
@@ -46,6 +47,16 @@ interface PreferencesState {
   /** Optional biometric/PIN lock on app open. */
   appLock: boolean;
   setAppLock: (next: boolean) => void;
+
+  /**
+   * Let high/urgent alerts break through Android's Do Not Disturb.
+   *
+   * Off by default: DND is the user's own boundary, and an app that pushes
+   * through it without being asked is the reason people uninstall apps. The
+   * switch lives in Settings → Notifications and says what it does.
+   */
+  dndBypass: boolean;
+  setDndBypass: (next: boolean) => void;
 
   /** Weekly target for completed tasks (0 = no goal). */
   weeklyGoalTasks: number;
@@ -123,6 +134,13 @@ export const usePreferences = create<PreferencesState>((set) => ({
     persist(APP_LOCK_KEY, next ? 'true' : 'false');
   },
 
+  dndBypass: false,
+  setDndBypass: (next) => {
+    userTouched = true;
+    set({ dndBypass: next });
+    persist(DND_BYPASS_KEY, next ? 'true' : 'false');
+  },
+
   weeklyGoalTasks: 0,
   setWeeklyGoalTasks: (next) => {
     userTouched = true;
@@ -186,12 +204,25 @@ Promise.all([
   AsyncStorage.getItem(LONG_BREAK_MINUTES_KEY),
   AsyncStorage.getItem(ROUNDS_KEY),
   AsyncStorage.getItem(APP_LOCK_KEY),
+  AsyncStorage.getItem(DND_BYPASS_KEY),
   AsyncStorage.getItem(WEEKLY_GOAL_KEY),
   AsyncStorage.getItem(TEMPLATES_KEY),
   AsyncStorage.getItem(LAST_TASK_KEY),
   AsyncStorage.getItem(REVIEW_KEY),
 ])
-  .then(([autoStart, goal, every, longMinutes, rounds, lock, weeklyGoal, templates, lastTask, review]) => {
+  .then(([
+    autoStart,
+    goal,
+    every,
+    longMinutes,
+    rounds,
+    lock,
+    dndBypass,
+    weeklyGoal,
+    templates,
+    lastTask,
+    review,
+  ]) => {
     if (userTouched) return;
     const patch: Partial<PreferencesState> = {};
     if (autoStart === 'true' || autoStart === 'false') patch.autoStartBreak = autoStart === 'true';
@@ -202,6 +233,7 @@ Promise.all([
     }
     if (rounds && Number.isFinite(Number(rounds))) patch.roundsCompleted = Number(rounds);
     if (lock === 'true' || lock === 'false') patch.appLock = lock === 'true';
+    if (dndBypass === 'true' || dndBypass === 'false') patch.dndBypass = dndBypass === 'true';
     if (weeklyGoal && Number.isFinite(Number(weeklyGoal))) {
       patch.weeklyGoalTasks = Number(weeklyGoal);
     }
