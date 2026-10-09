@@ -14,6 +14,13 @@ const COLUMNS: { status: TaskStatus; label: string; icon: keyof typeof Ionicons.
   { status: 'done', label: 'Done', icon: 'checkmark-circle-outline' },
 ];
 
+const LABEL_BY_STATUS: Record<TaskStatus, string> = {
+  todo: 'To do',
+  in_progress: 'In progress',
+  done: 'Done',
+  archived: 'Archived',
+};
+
 const NEXT_STATUS: Record<TaskStatus, TaskStatus> = {
   todo: 'in_progress',
   in_progress: 'done',
@@ -31,6 +38,12 @@ interface KanbanBoardProps {
  * Kanban board. Cards expose a one-tap "advance" control so the board stays
  * fully usable without a drag gesture, while the layout keeps the classic
  * column metaphor.
+ *
+ * There is deliberately no drag reorder: a drag is unreachable with a screen
+ * reader, awkward one-handed, and easy to trigger by accident while scrolling a
+ * horizontal lane. Each card's arrow is labelled with what it will do
+ * ("Move “Draft the brief” to In progress"), so the board is operable
+ * end-to-end from a keyboard, a screen reader or a thumb.
  */
 export function KanbanBoard({ tasks, onOpen, onMove }: KanbanBoardProps) {
   const theme = useTheme();
@@ -85,6 +98,8 @@ export function KanbanBoard({ tasks, onOpen, onMove }: KanbanBoardProps) {
                 <Pressable
                   key={task.id}
                   onPress={() => onOpen(task.id)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${task.title}. ${column.label}${task.priority === 'none' ? '' : `, ${task.priority} priority`}. Opens the task.`}
                   style={{
                     backgroundColor: theme.colors.surface,
                     borderRadius: theme.radii.lg,
@@ -116,6 +131,9 @@ export function KanbanBoard({ tasks, onOpen, onMove }: KanbanBoardProps) {
                         tapLight();
                         onMove(task.id, NEXT_STATUS[task.status]);
                       }}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Move “${task.title}” to ${LABEL_BY_STATUS[NEXT_STATUS[task.status]]}`}
+                      accessibilityHint="No dragging needed — this is the whole board action."
                     >
                       <Ionicons name="arrow-forward-circle-outline" size={20} color={theme.colors.accent} />
                     </Pressable>

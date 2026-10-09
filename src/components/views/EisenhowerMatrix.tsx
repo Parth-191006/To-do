@@ -85,7 +85,15 @@ export function EisenhowerMatrix({ tasks, onOpen }: EisenhowerMatrixProps) {
                 </Text>
               ) : (
                 cell.items.slice(0, 4).map((task) => (
-                  <Pressable key={task.id} onPress={() => onOpen(task.id)}>
+                  <Pressable
+                    key={task.id}
+                    onPress={() => onOpen(task.id)}
+                    accessibilityRole="button"
+                    // The cell's own heading and subtitle are read separately, so
+                    // the row announces which quadrant the task is in rather
+                    // than relying on the bullet it happens to be next to.
+                    accessibilityLabel={`${task.title}. ${cell.title} — ${cell.subtitle}. Opens the task.`}
+                  >
                     <Text variant="caption" numberOfLines={2}>
                       • {task.title}
                     </Text>

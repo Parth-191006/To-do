@@ -6,6 +6,7 @@ import {
   listTasks,
   restoreTask as restoreTaskRepo,
   searchTasks as searchTasksRepo,
+  setTaskStatus as setTaskStatusRepo,
   softDeleteTask,
   toggleTaskComplete,
   updateTask as updateTaskRepo,
@@ -36,6 +37,7 @@ import type {
   HabitLog,
   Project,
   Tag,
+  TaskStatus,
   TaskView,
   TaskWithTags,
 } from '@/domain/types';
@@ -85,6 +87,8 @@ export interface AppState {
   addTask: (draft: TaskDraft) => Promise<TaskWithTags>;
   patchTask: (id: string, patch: TaskDraft) => Promise<void>;
   toggleTask: (id: string) => Promise<void>;
+  /** Moves a task to a specific status (the board's one-tap advance). */
+  setStatus: (id: string, status: TaskStatus) => Promise<void>;
   removeTask: (id: string) => Promise<void>;
   /** Undo for the swipe-to-delete gesture. */
   restoreTask: (id: string) => Promise<void>;
@@ -265,6 +269,29 @@ export const useStore = create<AppState>()((set, get) => ({
       const updated = await updateTaskRepo(id, patch);
       if (updated) {
         await scheduleTaskNotifications(updated).catch(() => undefined);
+      }
+      await get().refreshTasks();
+    });
+  },
+
+  /**
+   * The board's advance control.
+   *
+   * It goes through the repository's status path rather than a field patch so
+   * that arriving in Done marks the task completed (and re-arming it cancels the
+   * reminders the way every other completion path does). Leaving Done puts the
+   * reminders back.
+   */
+  async setStatus(id, status) {
+    await guard(set, 'Could not move that task', async () => {
+      await setTaskStatusRepo(id, status);
+      if (status === 'done') {
+        await cancelTaskNotifications(id).catch(() => undefined);
+      } else {
+        const task = get().tasks.find((candidate) => candidate.id === id);
+        if (task) {
+          await scheduleTaskNotifications({ ...task, status }).catch(() => undefined);
+        }
       }
       await get().refreshTasks();
     });

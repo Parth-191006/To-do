@@ -75,6 +75,7 @@ export function TaskDashboard() {
   const removeTask = useStore((s) => s.removeTask);
   const restoreTask = useStore((s) => s.restoreTask);
   const patchTask = useStore((s) => s.patchTask);
+  const setStatus = useStore((s) => s.setStatus);
   const breakDownTask = useStore((s) => s.breakDownTask);
 
   const templates = usePreferences((s) => s.templates);
@@ -217,11 +218,14 @@ export function TaskDashboard() {
     flash('Task restored');
   }, [flash, restoreTask, undoId]);
 
+  // Through the store's status path, not a field patch: that path stamps
+  // `completed_at` and cancels or re-arms the task's reminders, so a task moved
+  // to Done on the board counts as completed everywhere else in the app.
   const handleMove = useCallback(
     (id: string, status: TaskStatus) => {
-      void patchTask(id, { status });
+      void setStatus(id, status);
     },
-    [patchTask],
+    [setStatus],
   );
 
   const handleDeleteProject = useCallback(

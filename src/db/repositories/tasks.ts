@@ -307,14 +307,36 @@ export async function updateTask(id: string, patch: TaskDraft): Promise<TaskWith
   return getTask(id);
 }
 
+/**
+ * Moves a task to a status without toggling it.
+ *
+ * Used by the Kanban board's one-tap advance. It stamps `completed_at` (and
+ * clears it when a task comes back out of Done) and cascades the same way
+ * `toggleTaskComplete` does — otherwise a task completed on the board would be
+ * missing from the completion counts and its subtasks would stay open, which is
+ * exactly the inconsistency the board used to have when it set `status` through
+ * a plain field patch.
+ */
 export async function setTaskStatus(id: string, status: TaskStatus): Promise<void> {
   const db = await getDatabase();
-  const completedAt = status === 'done' ? nowIso() : null;
-  await db.runAsync(
-    `UPDATE tasks SET status = ?, completed_at = ?, updated_at = ?, sync_state = 'pending'
-     WHERE id = ?`,
-    [status, completedAt, nowIso(), id],
-  );
+  const now = nowIso();
+  const completedAt = status === 'done' ? now : null;
+
+  await db.withTransactionAsync(async () => {
+    await db.runAsync(
+      `UPDATE tasks SET status = ?, completed_at = ?, updated_at = ?, sync_state = 'pending'
+       WHERE id = ?`,
+      [status, completedAt, now, id],
+    );
+
+    if (status === 'done') {
+      await db.runAsync(
+        `UPDATE tasks SET status = 'done', completed_at = ?, updated_at = ?, sync_state = 'pending'
+         WHERE parent_id = ? AND deleted_at IS NULL`,
+        [now, now, id],
+      );
+    }
+  });
 }
 
 /** Toggles done/todo and cascades completion to child subtasks. */
