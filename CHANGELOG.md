@@ -7,6 +7,54 @@ All notable changes to TaskFlow. The format follows
 Release APKs are published for every `v*` tag:
 <https://github.com/Parth-191006/To-do/releases/latest>
 
+## [Unreleased]
+
+Release hardening: CI and signing, a security pass over every public variable,
+per-field sync, end-to-end tests and a documentation split. Nothing here changes
+the data format, so updates install over 1.2.3 without a migration.
+
+### Added
+
+- **End-to-end flows** — five Maestro flows under [`.maestro/`](.maestro) cover
+  capture, completion, a Pomodoro, a habit check-in and export. A static suite
+  checks that each flow still parses and only targets `testID`s the app defines.
+  They are deliberately not in required CI, which cannot host a device.
+- **Experimental switch** in Settings, off by default, currently holding place
+  reminders — the one feature that is working but not whole.
+- **Documentation split**: the README is now pitch, screenshots, install,
+  features, quick start, privacy and links; the detail moved to
+  [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md),
+  [docs/RELEASING.md](docs/RELEASING.md) and
+  [docs/CONFIGURATION.md](docs/CONFIGURATION.md). Added
+  [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
+
+### Changed
+
+- **Release APKs are signed from repository secrets.** The workflow restores the
+  keystore from `ANDROID_KEYSTORE_BASE64` and friends, and fails with
+  instructions if any are missing. It never mints a key: a CI-generated identity
+  cannot install over an existing app.
+- **AI and transcription endpoints require a signed-in user.** The client sends
+  its Supabase access token; the sample edge functions answer `401` without one
+  and spend a per-user, per-minute budget before calling a provider with a
+  server-side key.
+- **Sync merges per field, not per row.** Two people editing different fields of
+  the same task now both keep their change, and a genuine same-field conflict is
+  recorded in the activity log.
+- **Do Not Disturb bypass is opt-in**, off by default, with the trade-off stated
+  in the UI.
+- **Release build size**: R8 minification and resource shrinking are now enabled
+  via `expo-build-properties`.
+- **All user-facing copy in the tabs and Settings** goes through an English
+  string table, and every control carries an accessibility label that follows
+  the OS text size.
+
+### Removed
+
+- `expo-blur`, `expo-device` and `expo-secure-store` — nothing imported any of
+  them. They contributed native code to the APK while the JS bundle stayed
+  byte-identical.
+
 ## [1.2.3] — 2026-10-05
 
 A release driven by an end-to-end audit: every feature the README claimed was
