@@ -348,7 +348,12 @@ export default function SettingsScreen() {
           gap: theme.spacing.md,
         }}
       >
-        <Pressable onPress={() => router.back()} hitSlop={10} accessibilityLabel="Close settings">
+        <Pressable
+          onPress={() => router.back()}
+          hitSlop={10}
+          accessibilityRole="button"
+          accessibilityLabel="Close settings"
+        >
           <Ionicons name="close" size={22} color={theme.colors.textSecondary} />
         </Pressable>
         <Text variant="title">Settings</Text>
@@ -512,6 +517,7 @@ export default function SettingsScreen() {
                 <TextInput
                   value={signInEmail}
                   onChangeText={setSignInEmail}
+                  accessibilityLabel="Email address"
                   placeholder="you@example.com"
                   placeholderTextColor={theme.colors.textTertiary}
                   keyboardType="email-address"

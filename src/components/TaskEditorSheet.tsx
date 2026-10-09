@@ -137,6 +137,7 @@ export function TaskEditorSheet({ task, visible, onClose }: TaskEditorSheetProps
         <TextInput
           value={title}
           onChangeText={setTitle}
+          accessibilityLabel="Task title"
           onBlur={() => title.trim() && title !== task.title && void commit({ title: title.trim() })}
           style={[
             theme.typography.heading,
@@ -154,6 +155,7 @@ export function TaskEditorSheet({ task, visible, onClose }: TaskEditorSheetProps
         <TextInput
           value={notes}
           onChangeText={setNotes}
+          accessibilityLabel="Notes"
           onBlur={() => notes !== task.notes && void commit({ notes })}
           multiline
           style={[
@@ -279,6 +281,7 @@ export function TaskEditorSheet({ task, visible, onClose }: TaskEditorSheetProps
             <TextInput
               value={tagDraft}
               onChangeText={setTagDraft}
+              accessibilityLabel="Add a tag"
               onSubmitEditing={() => void addTag()}
               placeholder="Add a tag"
               placeholderTextColor={theme.colors.textTertiary}
@@ -307,7 +310,12 @@ export function TaskEditorSheet({ task, visible, onClose }: TaskEditorSheetProps
                 icon="location"
                 selected
               />
-              <Pressable onPress={() => void commit({ locationReminder: null })} hitSlop={8}>
+              <Pressable
+                onPress={() => void commit({ locationReminder: null })}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel="Remove place reminder"
+              >
                 <Ionicons name="close-circle" size={18} color={theme.colors.textTertiary} />
               </Pressable>
             </View>

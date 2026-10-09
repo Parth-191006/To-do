@@ -53,14 +53,15 @@ export default function InsightsScreen() {
       >
         {RANGES.map((range) => {
           const active = range === windowDays;
-          return (
-            <Pressable
-              key={range}
-              onPress={() => {
-                if (active) return;
-                selection();
-                setWindowDays(range);
-              }}
+          return (              <Pressable
+                key={range}
+                onPress={() => {
+                  if (active) return;
+                  selection();
+                  setWindowDays(range);
+                }}
+                accessibilityRole="button"
+                accessibilityState={{ selected: active }}
               style={{
                 flex: 1,
                 alignItems: 'center',

@@ -112,11 +112,12 @@ export function AppLock({ children }: { children: React.ReactNode }) {
         <Text variant="caption" color={theme.colors.warning} align="center">
           {message}
         </Text>
-      ) : null}
-      <ScalePress
+      ) : null}      <ScalePress
         haptic={false}
         disabled={busy}
         onPress={() => void authenticate()}
+        accessibilityRole="button"
+        accessibilityState={{ disabled: busy }}
         accessibilityLabel="Unlock TaskFlow"
         style={{
           flexDirection: 'row',
@@ -134,7 +135,12 @@ export function AppLock({ children }: { children: React.ReactNode }) {
           {busy ? 'Waiting…' : 'Unlock'}
         </Text>
       </ScalePress>
-      <Pressable onPress={() => void authenticate()} hitSlop={10} accessibilityLabel="Try unlocking again">
+      <Pressable
+        onPress={() => void authenticate()}
+        hitSlop={10}
+        accessibilityRole="button"
+        accessibilityLabel="Try unlocking again"
+      >
         <Text variant="caption" color={theme.colors.textTertiary}>
           Try again
         </Text>

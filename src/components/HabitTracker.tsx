@@ -202,6 +202,7 @@ export function HabitTracker({ onOpenAnalytics }: HabitTrackerProps) {
               <Pressable
                 onPress={() => handleArchive(habit)}
                 hitSlop={8}
+                accessibilityRole="button"
                 accessibilityLabel={
                   confirmDeleteId === habit.id ? 'Confirm remove habit' : 'Remove habit'
                 }
@@ -216,6 +217,8 @@ export function HabitTracker({ onOpenAnalytics }: HabitTrackerProps) {
               <Pressable
                 onPress={() => handleToggle(habit)}
                 hitSlop={8}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: doneToday }}
                 accessibilityLabel={doneToday ? 'Undo today' : 'Complete today'}
               >
                 <Ionicons
@@ -236,6 +239,8 @@ export function HabitTracker({ onOpenAnalytics }: HabitTrackerProps) {
                   setOptionsFor(optionsFor === habit.id ? null : habit.id);
                 }}
                 hitSlop={8}
+                accessibilityRole="button"
+                accessibilityState={{ expanded: optionsFor === habit.id }}
                 accessibilityLabel={
                   optionsFor === habit.id ? 'Hide habit options' : 'Show habit options'
                 }
@@ -335,6 +340,7 @@ export function HabitTracker({ onOpenAnalytics }: HabitTrackerProps) {
             tapLight();
             onOpenAnalytics();
           }}
+          accessibilityRole="button"
           style={{
             flexDirection: 'row',
             alignItems: 'center',
@@ -397,6 +403,7 @@ function HabitInput({
     <TextInput
       value={value}
       onChangeText={onChange}
+      accessibilityLabel="New habit name"
       placeholder="New habit name"
       placeholderTextColor={theme.colors.textTertiary}
       returnKeyType="done"

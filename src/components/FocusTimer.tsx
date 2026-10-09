@@ -360,6 +360,10 @@ export function FocusTimer() {
               {phaseLabel}
             </Text>
             <Text
+              // Capped: the digits live inside a fixed 264dp ring, and at
+              // 300% text an uncapped 54px would spill past the progress arc.
+              // The time is still announced in full by the screen reader.
+              maxFontSizeMultiplier={1.5}
               style={{
                 fontSize: 54,
                 fontWeight: '800',
@@ -390,6 +394,7 @@ export function FocusTimer() {
             haptic={false}
             disabled={totalMs <= 0}
             onPress={() => (running ? pause() : void start())}
+            accessibilityRole="button"
             accessibilityLabel={running ? 'Pause the block' : 'Start the block'}
             style={{
               borderRadius: theme.radii.pill,
@@ -428,6 +433,7 @@ export function FocusTimer() {
           <ScalePress
             haptic={false}
             onPress={skip}
+            accessibilityRole="button"
             accessibilityLabel="Skip to the next block"
             style={{
               alignItems: 'center',

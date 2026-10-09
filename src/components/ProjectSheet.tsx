@@ -92,6 +92,7 @@ export function ProjectSheet({ visible, onClose, project = null, onCreated }: Pr
           <TextInput
             value={name}
             onChangeText={setName}
+            accessibilityLabel="List name"
             placeholder={NAME_PLACEHOLDER}
             placeholderTextColor={theme.colors.textTertiary}
             autoFocus
@@ -120,6 +121,8 @@ export function ProjectSheet({ visible, onClose, project = null, onCreated }: Pr
                     setColor(swatch);
                   }}
                   hitSlop={6}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: active }}
                   accessibilityLabel={`Colour ${swatch}`}
                   style={{
                     width: 34,
@@ -149,7 +152,15 @@ export function ProjectSheet({ visible, onClose, project = null, onCreated }: Pr
           />
           <Chip label="Cancel" onPress={onClose} />
           <View style={{ flex: 1 }} />
-          <Pressable onPress={() => { tapLight(); onClose(); }} hitSlop={8}>
+          <Pressable
+            onPress={() => {
+              tapLight();
+              onClose();
+            }}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="Close"
+          >
             <Ionicons name="close" size={20} color={theme.colors.textTertiary} />
           </Pressable>
         </View>

@@ -14,6 +14,7 @@ import { describeRecurrence } from '@/nlp/parser';
 import { childrenOf } from '@/store/selectors';
 import { useStore } from '@/store/useStore';
 import { useTheme } from '@/theme/ThemeProvider';
+import { playPauseLabel, toggleTaskLabel } from '@/utils/a11y';
 import { success, tapHeavy } from '@/utils/haptics';
 
 export default function TaskDetailScreen() {
@@ -68,7 +69,12 @@ export default function TaskDetailScreen() {
           gap: theme.spacing.md,
         }}
       >
-        <Pressable onPress={() => router.back()} hitSlop={10}>
+        <Pressable
+          onPress={() => router.back()}
+          hitSlop={10}
+          accessibilityRole="button"
+          accessibilityLabel="Back"
+        >
           <Ionicons name="chevron-back" size={22} color={theme.colors.textSecondary} />
         </Pressable>
         <View style={{ flex: 1 }} />
@@ -85,7 +91,13 @@ export default function TaskDetailScreen() {
       >
         <View style={{ gap: theme.spacing.sm }}>
           <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: theme.spacing.md }}>
-            <Pressable onPress={() => { success(); void toggleTask(task.id); }} hitSlop={10}>
+            <Pressable
+              onPress={() => { success(); void toggleTask(task.id); }}
+              hitSlop={10}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: done }}
+              accessibilityLabel={toggleTaskLabel(task.title, done)}
+            >
               <Ionicons
                 name={done ? 'checkmark-circle' : 'ellipse-outline'}
                 size={30}
@@ -247,6 +259,7 @@ function AddSubtaskSheet({
         <TextInput
           value={title}
           onChangeText={setTitle}
+          accessibilityLabel="Subtask title — dates and #tags work here too"
           placeholder="Subtask — dates and #tags work here too"
           placeholderTextColor={theme.colors.textTertiary}
           style={[
@@ -303,6 +316,9 @@ function AudioAttachment({ attachment }: { attachment: Attachment }) {
           // A missing file must never crash the detail screen.
         }
       }}
+      accessibilityRole="button"
+      accessibilityLabel={playPauseLabel(attachment.name, status.playing)}
+      accessibilityState={{ disabled: !status.isLoaded }}
       style={{
         flexDirection: 'row',
         alignItems: 'center',

@@ -13,6 +13,7 @@ import type { Priority, TaskWithTags } from '@/domain/types';
 import { describeRecurrence } from '@/nlp/parser';
 import { subtaskProgress } from '@/store/selectors';
 import { useTheme } from '@/theme/ThemeProvider';
+import { toggleTaskLabel } from '@/utils/a11y';
 import { success } from '@/utils/haptics';
 import { clamp } from '@/utils/id';
 
@@ -175,6 +176,7 @@ export function TaskCard({
         <Pressable
           onPress={() => onPress(task.id)}
           onLongPress={onBreakDown ? () => onBreakDown(task.id) : undefined}
+          accessibilityRole="button"
           style={{ flexDirection: 'row', alignItems: 'stretch' }}
         >
           {/* Priority stripe */}
@@ -208,6 +210,7 @@ export function TaskCard({
                 hitSlop={10}
                 accessibilityRole="checkbox"
                 accessibilityState={{ checked: done }}
+                accessibilityLabel={toggleTaskLabel(task.title, done)}
               >
                 <Ionicons
                   name={done ? 'checkmark-circle' : 'ellipse-outline'}

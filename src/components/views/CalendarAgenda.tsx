@@ -5,8 +5,15 @@ import { Pressable, StyleSheet, View } from 'react-native';
 
 import type { TaskWithTags } from '@/domain/types';
 import { useTheme } from '@/theme/ThemeProvider';
+import { describeTask } from '@/utils/a11y';
 
 import { Text } from '../ui';
+
+/** Spoken + visible due time: midnight is an all-day task, otherwise a clock. */
+function dueText(iso: string): string {
+  const date = parseISO(iso);
+  return date.getHours() === 0 && date.getMinutes() === 0 ? 'All day' : format(date, 'h:mm a');
+}
 
 interface CalendarAgendaProps {
   tasks: TaskWithTags[];
@@ -63,8 +70,12 @@ export function CalendarAgenda({ tasks, days = 14, onOpen }: CalendarAgendaProps
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm }}>
             <View
               style={{
-                width: 40,
-                height: 40,
+                // min-* rather than fixed: at 200% text "SEP" overflows a
+                // hard 40dp box, and the badge is allowed to grow with it.
+                minWidth: 40,
+                minHeight: 40,
+                paddingHorizontal: 4,
+                paddingVertical: 4,
                 borderRadius: theme.radii.md,
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -102,15 +113,16 @@ export function CalendarAgenda({ tasks, days = 14, onOpen }: CalendarAgendaProps
               }}
             />
           ) : (
-            group.items.map((task) => (
-              <Pressable
-                key={task.id}
-                onPress={() => onOpen(task.id)}
-                style={{
-                  marginLeft: 52,
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  gap: theme.spacing.sm,
+            group.items.map((task) => (            <Pressable
+              key={task.id}
+              onPress={() => onOpen(task.id)}
+              accessibilityRole="button"
+              accessibilityLabel={`${describeTask({
+                title: task.title,
+                priority: task.priority,
+                done: task.status === 'done',
+              })}${task.dueAt ? `, due ${dueText(task.dueAt)}` : ''}. Opens the task.`}
+              style={{ marginLeft: 52, flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm,
                   backgroundColor: theme.colors.surface,
                   borderRadius: theme.radii.md,
                   borderWidth: StyleSheet.hairlineWidth,
@@ -133,9 +145,7 @@ export function CalendarAgenda({ tasks, days = 14, onOpen }: CalendarAgendaProps
                   </Text>
                   {task.dueAt ? (
                     <Text variant="caption" color={theme.colors.textTertiary}>
-                      {new Date(task.dueAt).getHours() === 0 && new Date(task.dueAt).getMinutes() === 0
-                        ? 'All day'
-                        : format(parseISO(task.dueAt), 'h:mm a')}
+                      {dueText(task.dueAt)}
                     </Text>
                   ) : null}
                 </View>
@@ -157,6 +167,12 @@ export function CalendarAgenda({ tasks, days = 14, onOpen }: CalendarAgendaProps
             <Pressable
               key={task.id}
               onPress={() => onOpen(task.id)}
+              accessibilityRole="button"
+              accessibilityLabel={`${describeTask({
+                title: task.title,
+                priority: task.priority,
+                done: task.status === 'done',
+              })}. Opens the task.`}
               style={{
                 flexDirection: 'row',
                 alignItems: 'center',

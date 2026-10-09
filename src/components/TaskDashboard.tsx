@@ -378,6 +378,8 @@ export function TaskDashboard() {
               selection();
               setActiveProject(null);
             }}
+            accessibilityRole="button"
+            accessibilityState={{ selected: activeProjectId === null }}
           >
             <FilterPill label="All" active={activeProjectId === null} />
           </Pressable>
@@ -390,6 +392,8 @@ export function TaskDashboard() {
                   selection();
                   setActiveProject(project.id);
                 }}
+                accessibilityRole="button"
+                accessibilityState={{ selected: activeProjectId === project.id }}
               >
                 <FilterPill
                   label={project.name}
@@ -404,6 +408,8 @@ export function TaskDashboard() {
                 tapLight();
                 setProjectSheet({ open: true, editing: null });
               }}
+              accessibilityRole="button"
+              accessibilityLabel="New list"
             >
               <FilterPill label="New list" icon="add" active={false} />
             </Pressable>
@@ -643,6 +649,9 @@ export function TaskDashboard() {
           tapLight();
           setFabOpen((open) => !open);
         }}
+        accessibilityRole="button"
+        accessibilityState={{ expanded: fabOpen }}
+        accessibilityLabel={fabOpen ? 'Close quick actions' : 'Open quick actions'}
         style={{
           position: 'absolute',
           right: 20,
@@ -729,6 +738,7 @@ function MiniAction({
     <Pressable
       onPress={onPress}
       hitSlop={6}
+      accessibilityRole="button"
       accessibilityLabel={label}
       style={{
         flexDirection: 'row',
@@ -812,6 +822,7 @@ function FabAction({
   return (
     <Pressable
       onPress={onPress}
+      accessibilityRole="button"
       style={{
         flexDirection: 'row',
         alignItems: 'center',

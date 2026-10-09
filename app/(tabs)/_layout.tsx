@@ -1,9 +1,10 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
 import React from 'react';
-import { StyleSheet } from 'react-native';
+import { StyleSheet, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { tabBarHeight } from '@/utils/a11y';
 import { useTheme } from '@/theme/ThemeProvider';
 
 export default function TabsLayout() {
@@ -11,6 +12,9 @@ export default function TabsLayout() {
   // The bar used to be a fixed 84px tall regardless of the device, which left
   // it floating above gesture-nav phones and cramped on button-nav ones.
   const insets = useSafeAreaInsets();
+  // Labels follow the OS text-size setting, so the bar has to as well — at
+  // 200% text a fixed 58dp clips "Insights" to "Insi…".
+  const { fontScale } = useWindowDimensions();
 
   return (
     <Tabs
@@ -22,7 +26,7 @@ export default function TabsLayout() {
           backgroundColor: theme.colors.surface,
           borderTopColor: theme.colors.border,
           borderTopWidth: StyleSheet.hairlineWidth,
-          height: 58 + insets.bottom,
+          height: tabBarHeight(fontScale, insets.bottom),
           paddingTop: 6,
           paddingBottom: insets.bottom + 6,
           shadowColor: theme.colors.shadow,

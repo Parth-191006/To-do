@@ -237,12 +237,18 @@ export default function InboxScreen() {
           <TextInput
             value={query}
             onChangeText={setQuery}
+            accessibilityLabel="Search tasks and notes"
             placeholder="Search tasks and notes"
             placeholderTextColor={theme.colors.textTertiary}
             style={[theme.typography.body, { flex: 1, color: theme.colors.textPrimary, paddingVertical: 11 }]}
           />
           {query ? (
-            <Pressable onPress={() => setQuery('')} hitSlop={8}>
+            <Pressable
+              onPress={() => setQuery('')}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Clear search"
+            >
               <Ionicons name="close-circle" size={16} color={theme.colors.textTertiary} />
             </Pressable>
           ) : null}
@@ -256,6 +262,8 @@ export default function InboxScreen() {
                 selection();
                 setFilter(entry.key);
               }}
+              accessibilityRole="button"
+              accessibilityState={{ selected: filter === entry.key }}
               style={{
                 paddingVertical: 7,
                 paddingHorizontal: 14,
@@ -284,6 +292,8 @@ export default function InboxScreen() {
                   selection();
                   setActiveTagId(activeTagId === tag.id ? null : tag.id);
                 }}
+                accessibilityRole="button"
+                accessibilityState={{ selected: activeTagId === tag.id }}
               >
                 <View
                   style={{

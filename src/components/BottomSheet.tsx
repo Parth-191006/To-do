@@ -121,7 +121,12 @@ export function BottomSheet({
         <Animated.View
           style={[StyleSheet.absoluteFill, { backgroundColor: theme.colors.overlay, opacity: backdrop }]}
         >
-          <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Close sheet" />
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            onPress={onClose}
+            accessibilityRole="button"
+            accessibilityLabel="Close sheet"
+          />
         </Animated.View>
 
         <Animated.View

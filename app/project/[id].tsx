@@ -162,7 +162,12 @@ export default function ProjectScreen() {
           gap: theme.spacing.sm,
         }}
       >
-        <Pressable onPress={() => router.back()} hitSlop={10} accessibilityLabel="Back">
+        <Pressable
+          onPress={() => router.back()}
+          hitSlop={10}
+          accessibilityRole="button"
+          accessibilityLabel="Back"
+        >
           <Ionicons name="chevron-back" size={22} color={theme.colors.textSecondary} />
         </Pressable>
         <View style={{ flex: 1 }} />
@@ -314,6 +319,7 @@ export default function ProjectScreen() {
           <TextInput
             value={inviteEmail}
             onChangeText={setInviteEmail}
+            accessibilityLabel="Teammate email"
             placeholder="teammate@example.com"
             placeholderTextColor={theme.colors.textTertiary}
             keyboardType="email-address"

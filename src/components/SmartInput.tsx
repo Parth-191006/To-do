@@ -259,6 +259,7 @@ export function SmartInput({ onSubmit, label = 'Quick add', autoFocus = false, h
         <ScalePress
           onPress={handleSubmit}
           disabled={!hasContent || busy}
+          accessibilityRole="button"
           accessibilityLabel={hasContent ? 'Add task' : 'Add task — type something first'}
           accessibilityState={{ disabled: !hasContent || busy }}
           style={{
