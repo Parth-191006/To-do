@@ -19,6 +19,26 @@
  * - Priority is five *distinct* hues. High (orange) and urgent (red) must stay
  *   distinguishable at a glance, so the semantic ramp is intentionally kept
  *   independent of the brand colour.
+ *
+ * Contrast (WCAG 2.1)
+ * -------------------
+ * `tests/accessibility.test.ts` asserts the pairs this file declares — text at
+ * 4.5:1, indicators at 3:1 — because "it looks fine" is not a measurement. Five
+ * pairs failed that check when it was written, and the values below are the
+ * fixes; the light theme moved one stop darker rather than the layout getting
+ * bolder, so nothing about the design had to be re-drawn:
+ *
+ * | Pair | Was | Now |
+ * | --- | --- | --- |
+ * | light `accentContrast` on the gradient's second stop | 2.49:1 | 7.8:1 (stop is teal800) |
+ * | light `textTertiary`-equivalent `danger` / `success` / `warning` as text | 3.43 / 2.37 / 2.01 | rose700 / emerald700 / amber700 |
+ * | light status icons on their own tinted panels | 1.9–2.3:1 | 4.5:1+ |
+ * | light priority stripes and dots | 2.2–2.8:1 | 3.5:1+ |
+ * | dark `textTertiary` on `surfaceElevated` / `surfaceSunken` | 4.21 / 3.75 | 5.4 / 4.8 |
+ *
+ * The dark theme needed one change: a caption on a sunken card was the only
+ * place it dipped under AA. Priority hues stayed their own hues in both themes;
+ * only their depth moved.
  */
 
 export const palette = {
@@ -36,15 +56,20 @@ export const palette = {
   rose400: '#FB7185',
   rose500: '#F43F5E',
   rose600: '#E11D48',
+  rose700: '#BE123C',
   orange400: '#FB923C',
   orange500: '#F97316',
+  orange600: '#EA580C',
   amber400: '#FBBF24',
   amber500: '#F59E0B',
+  amber700: '#B45309',
   emerald400: '#34D399',
   emerald500: '#10B981',
+  emerald700: '#047857',
   tealAccent: '#2DD4BF',
   sky400: '#38BDF8',
   sky500: '#0EA5E9',
+  sky600: '#0284C7',
   violet400: '#A78BFA',
   indigo500: '#6C5CE7',
   fuchsia400: '#E879F9',
@@ -187,21 +212,28 @@ export const lightColors: ThemeColors = {
   // Teal-700: passes AA as small text on white *and* under white text.
   accent: palette.teal700,
   accentSecondary: palette.teal500,
-  accentGradient: [palette.teal700, palette.teal500],
+  // Both stops carry text and icons where the gradient is a surface (the focus
+  // pill, the capture FAB), so the ramp runs teal-700 → teal-800: white on
+  // teal-500 measured 2.49:1 and on teal-600 3.74:1, neither of which is
+  // readable copy.
+  accentGradient: [palette.teal700, palette.teal800],
   accentSoft: palette.teal100,
   accentContrast: palette.white,
   overlay: 'rgba(15, 23, 42, 0.45)',
-  danger: palette.rose500,
+  // The status colours are read as *text* ("Notifications are on") and as icons
+  // on their own soft panels, so the light theme uses the 700 stops: the 500s
+  // were pastel enough to sit at 1.9–2.4:1 on their own tint.
+  danger: palette.rose700,
   dangerSoft: '#FFE4E9',
-  success: palette.emerald500,
+  success: palette.emerald700,
   successSoft: '#DCFCE7',
-  warning: palette.amber500,
+  warning: palette.amber700,
   warningSoft: '#FEF3C7',
   priority: {
-    none: '#A6AFC0',
-    low: palette.sky500,
-    medium: palette.amber500,
-    high: palette.orange500,
+    none: palette.slate500,
+    low: palette.sky600,
+    medium: palette.amber700,
+    high: palette.orange600,
     urgent: palette.rose600,
   },
   prioritySoft: {
@@ -224,7 +256,9 @@ export const darkColors: ThemeColors = {
   borderStrong: palette.ink4,
   textPrimary: '#F2F7F6',
   textSecondary: '#A4B4B2',
-  textTertiary: '#71817F',
+  // Was #71817F, which cleared AA on the page background but dropped to 3.75:1
+  // on a sunken card — exactly where the smallest captions live.
+  textTertiary: '#849492',
   textInverse: palette.ink0,
   // Bright teal reads as a link/label on the dark ramp…
   accent: palette.teal400,
