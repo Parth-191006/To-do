@@ -39,6 +39,7 @@ export interface SyncHarness {
     getFirstAsync(sql: string, params?: unknown[]): Promise<unknown>;
     getAllAsync(sql: string, params?: unknown[]): Promise<unknown[]>;
     execAsync(sql: string): Promise<void>;
+    withTransactionAsync(fn: () => Promise<void>): Promise<void>;
   };
   reset(): void;
   drop(): void;
@@ -69,10 +70,30 @@ export const harness: SyncHarness = {
     execAsync: async (sql: string) => {
       db.exec(sql);
     },
+    withTransactionAsync: async (fn: () => Promise<void>) => {
+      db.exec('BEGIN');
+      try {
+        await fn();
+        db.exec('COMMIT');
+      } catch (error) {
+        db.exec('ROLLBACK');
+        throw error;
+      }
+    },
   },
   reset() {
     db.exec('PRAGMA foreign_keys = OFF;');
-    for (const table of ['tasks', 'activity_logs', 'sync_outbox', 'sync_meta', 'task_tags']) {
+    for (const table of [
+      'tasks',
+      'task_tags',
+      'activity_logs',
+      'sync_outbox',
+      'sync_meta',
+      'projects',
+      'tags',
+      'habits',
+      'habit_logs',
+    ]) {
       db.exec(`DELETE FROM ${table};`);
     }
     db.exec('PRAGMA foreign_keys = ON;');

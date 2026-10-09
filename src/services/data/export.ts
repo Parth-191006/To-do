@@ -4,42 +4,50 @@
 // `documentDirectory`), and it is what `expo-sharing` expects a URI from.
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
-import { Platform } from 'react-native';
 
-import { getDatabase } from '@/db/client';
 import { listAllHabitLogs, listHabits } from '@/db/repositories/habits';
 import { listProjects } from '@/db/repositories/projects';
 import { listTags } from '@/db/repositories/tags';
 import { listTasks } from '@/db/repositories/tasks';
-import type { Habit, HabitLog, Project, Tag, TaskWithTags } from '@/domain/types';
 import { nowIso } from '@/utils/id';
 
+import { backupFileNameFor, prunePlan } from './backupSchedule';
+import {
+  BACKUP_FILENAME,
+  BACKUP_VERSION,
+  serializeBackup,
+  tasksToCsv,
+  type BackupBundle,
+} from './backupFormat';
+
 /**
- * Export, import and local backup.
+ * Export, backup and restore — the file half.
  *
  * Settings offered a "Reset local data" button and no way to get the data out
- * first — a real dead end for anyone switching phones or just wanting a copy.
- * Everything here is local: a JSON snapshot (the full, re-importable shape) and
- * a CSV (for spreadsheets), plus a rolling on-device backup that survives an
- * accidental reset.
+ * first, which was a real dead end for anyone switching phones or just wanting a
+ * copy. Everything here is local: a JSON snapshot (the full, re-importable
+ * shape), a CSV for spreadsheets, and a rolling on-device backup that survives
+ * an accidental reset.
+ *
+ * The format itself (validation, the version gate, the CSV writer) lives in
+ * `./backupFormat`, and the write path in `./importBundle`: both are free of
+ * native imports, so a plain Node test proves a round trip is lossless and that
+ * re-importing creates nothing twice.
  *
  * No backend, no account, no network call.
  */
 
-export interface BackupBundle {
-  version: 1;
-  exportedAt: string;
-  appVersion: string;
-  projects: Project[];
-  tasks: TaskWithTags[];
-  tags: Tag[];
-  habits: Habit[];
-  habitLogs: HabitLog[];
+export * from './backupFormat';
+export * from './importBundle';
+
+export interface ExportResult {
+  ok: boolean;
+  uri?: string;
+  shared?: boolean;
+  reason?: string;
 }
 
-export const BACKUP_FILENAME = 'taskflow-backup.json';
-
-/** Directory for automatic backups — private to the app, never auto-deleted. */
+/** Directory for backups — private to the app, never auto-deleted. */
 function backupDir(): string {
   // `documentDirectory` is the app's private folder on both platforms.
   return `${FileSystem.documentDirectory ?? ''}backups/`;
@@ -56,7 +64,7 @@ export async function buildBackup(): Promise<BackupBundle> {
   ]);
 
   return {
-    version: 1,
+    version: BACKUP_VERSION,
     exportedAt: nowIso(),
     appVersion: '1.2.3',
     projects,
@@ -65,79 +73,6 @@ export async function buildBackup(): Promise<BackupBundle> {
     habits,
     habitLogs,
   };
-}
-
-export function serializeBackup(bundle: BackupBundle): string {
-  return JSON.stringify(bundle, null, 2);
-}
-
-/* -------------------------------------------------------------------------- */
-/*                                    CSV                                     */
-/* -------------------------------------------------------------------------- */
-
-/** RFC-4180 escaping: quote everything that could break a spreadsheet. */
-export function csvCell(value: unknown): string {
-  if (value === null || value === undefined) return '';
-  const text = typeof value === 'object' ? JSON.stringify(value) : String(value);
-  return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
-}
-
-export const TASK_CSV_HEADER = [
-  'id',
-  'title',
-  'notes',
-  'status',
-  'priority',
-  'due_at',
-  'remind_at',
-  'recurrence',
-  'estimate_minutes',
-  'project_id',
-  'parent_id',
-  'completed_at',
-  'tags',
-  'created_at',
-  'updated_at',
-] as const;
-
-/** Tasks as CSV — one row per task, tags flattened to `a;b`. */
-export function tasksToCsv(
-  tasks: TaskWithTags[],
-  tagNameById: Map<string, string> = new Map(),
-): string {
-  const rows = tasks.map((task) =>
-    [
-      task.id,
-      task.title,
-      task.notes,
-      task.status,
-      task.priority,
-      task.dueAt,
-      task.remindAt,
-      task.recurrence,
-      task.estimateMinutes,
-      task.projectId,
-      task.parentId,
-      task.completedAt,
-      task.tagIds.map((id) => tagNameById.get(id) ?? id).join(';'),
-      task.createdAt,
-      task.updatedAt,
-    ]
-      .map(csvCell)
-      .join(','),
-  );
-  return [TASK_CSV_HEADER.join(','), ...rows].join('\n');
-}
-
-/* -------------------------------------------------------------------------- */
-/*                                  writing                                   */
-/* -------------------------------------------------------------------------- */
-
-export interface ExportResult {
-  ok: boolean;
-  uri?: string;
-  shared?: boolean;
-  reason?: string;
 }
 
 async function writeAndShare(
@@ -153,7 +88,10 @@ async function writeAndShare(
     );
     await FileSystem.writeAsStringAsync(target, contents);
   } catch (error) {
-    return { ok: false, reason: error instanceof Error ? error.message : 'Could not write the file' };
+    return {
+      ok: false,
+      reason: error instanceof Error ? error.message : 'Could not write the file',
+    };
   }
 
   // The share sheet is the only way out of the app sandbox without a backend,
@@ -173,15 +111,42 @@ async function writeAndShare(
   return { ok: true, uri: target, shared: false };
 }
 
+/** Writes the rolling backup and returns its path, or null if the disk refused. */
+async function writeLocalFile(filename: string, contents: string): Promise<string | null> {
+  const target = `${backupDir()}${filename}`;
+  try {
+    await FileSystem.makeDirectoryAsync(backupDir(), { intermediates: true }).catch(
+      () => undefined,
+    );
+    await FileSystem.writeAsStringAsync(target, contents);
+    return target;
+  } catch {
+    return null;
+  }
+}
+
 export async function exportJson(): Promise<ExportResult> {
   const bundle = await buildBackup();
-  return writeAndShare(BACKUP_FILENAME, serializeBackup(bundle), 'application/json', 'Export TaskFlow data');
+  return writeAndShare(
+    BACKUP_FILENAME,
+    serializeBackup(bundle),
+    'application/json',
+    'Export TaskFlow data',
+  );
 }
 
 export async function exportCsv(): Promise<ExportResult> {
-  const [tasks, tags] = await Promise.all([listTasks({ status: 'all', includeCompleted: true }), listTags()]);
+  const [tasks, tags] = await Promise.all([
+    listTasks({ status: 'all', includeCompleted: true }),
+    listTags(),
+  ]);
   const names = new Map(tags.map((tag) => [tag.id, tag.name]));
-  return writeAndShare('taskflow-tasks.csv', tasksToCsv(tasks, names), 'text/csv', 'Export tasks as CSV');
+  return writeAndShare(
+    'taskflow-tasks.csv',
+    tasksToCsv(tasks, names),
+    'text/csv',
+    'Export tasks as CSV',
+  );
 }
 
 /**
@@ -190,16 +155,39 @@ export async function exportCsv(): Promise<ExportResult> {
  */
 export async function writeLocalBackup(): Promise<string | null> {
   const bundle = await buildBackup();
-  const target = `${backupDir()}${BACKUP_FILENAME}`;
+  return writeLocalFile(BACKUP_FILENAME, serializeBackup(bundle));
+}
+
+/**
+ * Writes one dated copy for the weekly automatic backup and prunes the old ones.
+ *
+ * A dated file rather than the rolling one, so a bad week does not overwrite the
+ * good copy a user might still need. Returns the file name, or null on failure.
+ *
+ * **Trade-off, stated plainly:** this lands in the app's own folder. Writing into
+ * the phone's *shared* storage without asking is not possible from Expo without
+ * a heavier dependency (the Storage Access Framework, or a media library), and
+ * popping the share sheet every week would be worse than not backing up at all.
+ * So the automatic copy is local and pruned; the share sheet is still one tap
+ * away in Settings for a copy somewhere else.
+ */
+export async function writeWeeklyBackup(): Promise<string | null> {
+  const bundle = await buildBackup();
+  const name = backupFileNameFor();
+  const written = await writeLocalFile(name, serializeBackup(bundle));
+  if (!written) return null;
+
   try {
-    await FileSystem.makeDirectoryAsync(backupDir(), { intermediates: true }).catch(
-      () => undefined,
-    );
-    await FileSystem.writeAsStringAsync(target, serializeBackup(bundle));
-    return target;
+    const files = await FileSystem.readDirectoryAsync(backupDir());
+    for (const stale of prunePlan(files)) {
+      await FileSystem.deleteAsync(`${backupDir()}${stale}`, { idempotent: true }).catch(
+        () => undefined,
+      );
+    }
   } catch {
-    return null;
+    // Pruning is housekeeping; the new backup is already on disk.
   }
+  return name;
 }
 
 export async function localBackupPath(): Promise<string> {
@@ -226,178 +214,11 @@ export async function readLocalBackupInfo(): Promise<{ exists: boolean; modified
   }
 }
 
-/* -------------------------------------------------------------------------- */
-/*                                  importing                                 */
-/* -------------------------------------------------------------------------- */
-
-export interface ImportSummary {
-  projects: number;
-  tasks: number;
-  tags: number;
-  habits: number;
-  habitLogs: number;
-  skipped: number;
-}
-
-/**
- * Validates a parsed bundle. Import must never half-apply: either the file has
- * the shape we wrote, or nothing changes.
- */
-export function validateBundle(raw: unknown): { ok: true; bundle: BackupBundle } | { ok: false; reason: string } {
-  if (typeof raw !== 'object' || raw === null) return { ok: false, reason: 'Not a TaskFlow backup file.' };
-  const candidate = raw as Partial<BackupBundle>;
-  if (!Array.isArray(candidate.tasks)) return { ok: false, reason: 'The file has no task list.' };
-  if (!Array.isArray(candidate.projects)) return { ok: false, reason: 'The file has no list data.' };
-
-  return {
-    ok: true,
-    bundle: {
-      version: 1,
-      exportedAt: typeof candidate.exportedAt === 'string' ? candidate.exportedAt : nowIso(),
-      appVersion: typeof candidate.appVersion === 'string' ? candidate.appVersion : 'unknown',
-      projects: candidate.projects as Project[],
-      tasks: candidate.tasks.map((task) => ({ ...task, tagIds: task.tagIds ?? [] })),
-      tags: Array.isArray(candidate.tags) ? (candidate.tags as Tag[]) : [],
-      habits: Array.isArray(candidate.habits) ? (candidate.habits as Habit[]) : [],
-      habitLogs: Array.isArray(candidate.habitLogs) ? (candidate.habitLogs as HabitLog[]) : [],
-    },
-  };
-}
-
-/**
- * Applies a bundle. Rows are upserted by id, so importing your own export is a
- * no-op and importing a merge from another phone adds what is missing instead of
- * wiping what is here (`INSERT OR IGNORE` for existing ids).
- */
-export async function importBundle(bundle: BackupBundle): Promise<ImportSummary> {
-  const db = await getDatabase();
-  const summary: ImportSummary = {
-    projects: 0,
-    tasks: 0,
-    tags: 0,
-    habits: 0,
-    habitLogs: 0,
-    skipped: 0,
-  };
-
-  await db.withTransactionAsync(async () => {
-    for (const project of bundle.projects) {
-      await db.runAsync(
-        `INSERT OR IGNORE INTO projects
-           (id, name, color, icon, is_archived, position, created_at, updated_at, deleted_at, sync_state)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
-        [
-          project.id,
-          project.name,
-          project.color,
-          project.icon ?? 'folder',
-          project.isArchived ? 1 : 0,
-          project.position ?? 0,
-          project.createdAt,
-          project.updatedAt,
-          project.deletedAt ?? null,
-        ],
-      );
-      summary.projects += 1;
-    }
-
-    for (const tag of bundle.tags) {
-      await db.runAsync(
-        `INSERT OR IGNORE INTO tags (id, name, color, created_at, updated_at, sync_state)
-         VALUES (?, ?, ?, ?, ?, 'pending')`,
-        [tag.id, tag.name, tag.color, tag.createdAt, tag.updatedAt],
-      );
-      summary.tags += 1;
-    }
-
-    for (const task of bundle.tasks) {
-      await db.runAsync(
-        `INSERT OR IGNORE INTO tasks
-           (id, project_id, parent_id, title, notes, status, priority, due_at, remind_at,
-            recurrence, location_reminder, estimate_minutes, attachments, position,
-            completed_at, created_at, updated_at, deleted_at, sync_state)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
-        [
-          task.id,
-          task.projectId ?? null,
-          task.parentId ?? null,
-          task.title,
-          task.notes ?? '',
-          task.status ?? 'todo',
-          task.priority ?? 'none',
-          task.dueAt ?? null,
-          task.remindAt ?? null,
-          task.recurrence ? JSON.stringify(task.recurrence) : null,
-          task.locationReminder ? JSON.stringify(task.locationReminder) : null,
-          task.estimateMinutes ?? null,
-          JSON.stringify(task.attachments ?? []),
-          task.position ?? 0,
-          task.completedAt ?? null,
-          task.createdAt,
-          task.updatedAt,
-          task.deletedAt ?? null,
-        ],
-      );
-      for (const tagId of task.tagIds ?? []) {
-        await db.runAsync('INSERT OR IGNORE INTO task_tags (task_id, tag_id) VALUES (?, ?)', [
-          task.id,
-          tagId,
-        ]);
-      }
-      summary.tasks += 1;
-    }
-
-    for (const habit of bundle.habits) {
-      await db.runAsync(
-        `INSERT OR IGNORE INTO habits
-           (id, name, color, icon, target_per_period, cadence, by_weekday, reminder_hour,
-            reminder_minute, is_archived, created_at, updated_at, sync_state)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
-        [
-          habit.id,
-          habit.name,
-          habit.color,
-          habit.icon ?? 'flame',
-          habit.targetPerPeriod ?? 1,
-          habit.cadence ?? 'daily',
-          JSON.stringify(habit.byWeekday ?? []),
-          habit.reminderHour ?? null,
-          habit.reminderMinute ?? null,
-          habit.isArchived ? 1 : 0,
-          habit.createdAt,
-          habit.updatedAt,
-        ],
-      );
-      summary.habits += 1;
-    }
-
-    for (const log of bundle.habitLogs) {
-      await db.runAsync(
-        `INSERT OR IGNORE INTO habit_logs (id, habit_id, date_key, count, created_at, sync_state)
-         VALUES (?, ?, ?, ?, ?, 'pending')`,
-        [log.id, log.habitId, log.dateKey, log.count, log.createdAt],
-      );
-      summary.habitLogs += 1;
-    }
-  });
-
-  return summary;
-}
-
-/** Parses + validates + applies, returning a human-readable summary line. */
-export async function importFromJsonText(text: string): Promise<{ ok: boolean; message: string }> {
-  let parsed: unknown;
+/** Reads the rolling backup back as text (the restore button). */
+export async function readLocalBackupText(): Promise<string | null> {
   try {
-    parsed = JSON.parse(text);
+    return await FileSystem.readAsStringAsync(`${backupDir()}${BACKUP_FILENAME}`);
   } catch {
-    return { ok: false, message: 'That file is not valid JSON.' };
+    return null;
   }
-  const validated = validateBundle(parsed);
-  if (!validated.ok) return { ok: false, message: validated.reason };
-
-  const summary = await importBundle(validated.bundle);
-  return {
-    ok: true,
-    message: `Imported ${summary.tasks} tasks, ${summary.projects} lists, ${summary.tags} tags, ${summary.habits} habits (${Platform.OS}).`,
-  };
 }

@@ -16,6 +16,9 @@ const LONG_BREAK_MINUTES_KEY = 'taskflow.focus.longBreakMinutes';
 const ROUNDS_KEY = 'taskflow.focus.roundsCompleted';
 const APP_LOCK_KEY = 'taskflow.security.appLock';
 const DND_BYPASS_KEY = 'taskflow.notifications.dndBypass';
+const WEEKLY_BACKUP_KEY = 'taskflow.data.weeklyBackup';
+const LAST_BACKUP_KEY = 'taskflow.data.lastBackupAt';
+const ONBOARDED_KEY = 'taskflow.onboarding.seen';
 const WEEKLY_GOAL_KEY = 'taskflow.insights.weeklyGoalTasks';
 const TEMPLATES_KEY = 'taskflow.capture.templates';
 const LAST_TASK_KEY = 'taskflow.capture.lastTask';
@@ -57,6 +60,25 @@ interface PreferencesState {
    */
   dndBypass: boolean;
   setDndBypass: (next: boolean) => void;
+
+  /** Write a dated local backup once a week, when the app is opened. */
+  weeklyBackup: boolean;
+  setWeeklyBackup: (next: boolean) => void;
+  /** ISO timestamp of the last automatic backup, or null. */
+  lastBackupAt: string | null;
+  markBackupDone: (at: string) => void;
+
+  /** True once the first-run tour has been completed or dismissed. */
+  onboarded: boolean;
+  setOnboarded: (next: boolean) => void;
+
+  /**
+   * True once the disk read below has settled (successfully or not).
+   *
+   * The first-run tour and the Do Not Disturb channel both have "off" defaults,
+   * and neither may act on that default before the saved value arrives.
+   */
+  hydrated: boolean;
 
   /** Weekly target for completed tasks (0 = no goal). */
   weeklyGoalTasks: number;
@@ -141,6 +163,27 @@ export const usePreferences = create<PreferencesState>((set) => ({
     persist(DND_BYPASS_KEY, next ? 'true' : 'false');
   },
 
+  weeklyBackup: false,
+  setWeeklyBackup: (next) => {
+    userTouched = true;
+    set({ weeklyBackup: next });
+    persist(WEEKLY_BACKUP_KEY, next ? 'true' : 'false');
+  },
+  lastBackupAt: null,
+  markBackupDone: (at) => {
+    set({ lastBackupAt: at });
+    persist(LAST_BACKUP_KEY, at);
+  },
+
+  onboarded: false,
+  setOnboarded: (next) => {
+    userTouched = true;
+    set({ onboarded: next });
+    persist(ONBOARDED_KEY, next ? 'true' : 'false');
+  },
+
+  hydrated: false,
+
   weeklyGoalTasks: 0,
   setWeeklyGoalTasks: (next) => {
     userTouched = true;
@@ -205,6 +248,9 @@ Promise.all([
   AsyncStorage.getItem(ROUNDS_KEY),
   AsyncStorage.getItem(APP_LOCK_KEY),
   AsyncStorage.getItem(DND_BYPASS_KEY),
+  AsyncStorage.getItem(WEEKLY_BACKUP_KEY),
+  AsyncStorage.getItem(LAST_BACKUP_KEY),
+  AsyncStorage.getItem(ONBOARDED_KEY),
   AsyncStorage.getItem(WEEKLY_GOAL_KEY),
   AsyncStorage.getItem(TEMPLATES_KEY),
   AsyncStorage.getItem(LAST_TASK_KEY),
@@ -218,6 +264,9 @@ Promise.all([
     rounds,
     lock,
     dndBypass,
+    weeklyBackup,
+    lastBackup,
+    onboarded,
     weeklyGoal,
     templates,
     lastTask,
@@ -234,6 +283,11 @@ Promise.all([
     if (rounds && Number.isFinite(Number(rounds))) patch.roundsCompleted = Number(rounds);
     if (lock === 'true' || lock === 'false') patch.appLock = lock === 'true';
     if (dndBypass === 'true' || dndBypass === 'false') patch.dndBypass = dndBypass === 'true';
+    if (weeklyBackup === 'true' || weeklyBackup === 'false') {
+      patch.weeklyBackup = weeklyBackup === 'true';
+    }
+    if (lastBackup) patch.lastBackupAt = lastBackup;
+    if (onboarded === 'true' || onboarded === 'false') patch.onboarded = onboarded === 'true';
     if (weeklyGoal && Number.isFinite(Number(weeklyGoal))) {
       patch.weeklyGoalTasks = Number(weeklyGoal);
     }
@@ -247,8 +301,10 @@ Promise.all([
     }
     if (lastTask) patch.lastTaskText = lastTask;
     if (review) patch.lastReviewDismissed = review;
-    usePreferences.setState(patch);
+    usePreferences.setState({ ...patch, hydrated: true });
   })
   .catch(() => {
-    // Non-fatal: every preference simply stays at its default.
+    // Non-fatal: every preference simply stays at its default — but the app is
+    // told the read is over, so the first-run tour does not wait forever.
+    usePreferences.setState({ hydrated: true });
   });

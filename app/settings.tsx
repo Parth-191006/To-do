@@ -14,10 +14,13 @@ import {
   exportJson,
   importFromJsonText,
   localBackupExists,
-  localBackupPath,
+  previewImport,
   readLocalBackupInfo,
+  readLocalBackupText,
   writeLocalBackup,
+  type ImportPlan,
 } from '@/services/data/export';
+import { runWeeklyBackupNow } from '@/services/data/weeklyBackup';
 import * as FileSystem from 'expo-file-system/legacy';
 import {
   applyDndBypassPreference,
@@ -64,12 +67,18 @@ export default function SettingsScreen() {
   const setAppLock = usePreferences((state) => state.setAppLock);
   const dndBypass = usePreferences((state) => state.dndBypass);
   const setDndBypass = usePreferences((state) => state.setDndBypass);
+  const weeklyBackup = usePreferences((state) => state.weeklyBackup);
+  const setWeeklyBackup = usePreferences((state) => state.setWeeklyBackup);
+  const lastBackupAt = usePreferences((state) => state.lastBackupAt);
+  const setOnboarded = usePreferences((state) => state.setOnboarded);
   const dailyGoalMinutes = usePreferences((state) => state.dailyGoalMinutes);
   const weeklyGoalTasks = usePreferences((state) => state.weeklyGoalTasks);
 
   const [backup, setBackup] = useState<{ exists: boolean; modifiedAt?: number }>({ exists: false });
   const [importOpen, setImportOpen] = useState(false);
   const [importText, setImportText] = useState('');
+  /** Set once the pasted file has been checked, so the second tap can apply it. */
+  const [importPlan, setImportPlan] = useState<ImportPlan | null>(null);
   const [dataNote, setDataNote] = useState<string | null>(null);
 
   const [permission, setPermission] = useState<'granted' | 'denied' | 'undetermined'>('undetermined');
@@ -248,13 +257,36 @@ export default function SettingsScreen() {
     }
   }, [refreshBackupInfo]);
 
-  const handleImport = useCallback(
+  /**
+   * First tap: check the file and say what it would change. Nothing is written
+   * yet — an import that turns out to be the backup already on the phone should
+   * not look like twelve new tasks about to arrive.
+   */
+  const handleCheckImport = useCallback(async (text: string) => {
+    setBusy(true);
+    try {
+      const preview = await previewImport(text);
+      if (!preview.ok) {
+        setImportPlan(null);
+        setDataNote(preview.message);
+        return;
+      }
+      setImportPlan(preview.plan);
+      setDataNote(preview.message);
+    } finally {
+      setBusy(false);
+    }
+  }, []);
+
+  /** Second tap: apply it. Duplicates are ignored by id, so this is safe twice. */
+  const handleApplyImport = useCallback(
     async (text: string) => {
       setBusy(true);
       try {
         const result = await importFromJsonText(text);
         setDataNote(result.message);
         if (result.ok) {
+          setImportPlan(null);
           setImportOpen(false);
           setImportText('');
           await bootstrap();
@@ -273,14 +305,18 @@ export default function SettingsScreen() {
         setDataNote('No local backup on this device yet — export one first.');
         return;
       }
-      const text = await FileSystem.readAsStringAsync(await localBackupPath());
-      await handleImport(text);
+      const text = await readLocalBackupText();
+      if (!text) {
+        setDataNote('Could not read the local backup.');
+        return;
+      }
+      await handleApplyImport(text);
     } catch {
       setDataNote('Could not read the local backup.');
     } finally {
       setBusy(false);
     }
-  }, [handleImport]);
+  }, [handleApplyImport]);
 
   /**
    * Clearing local data now takes a backup first. A single mis-tap used to be
@@ -534,6 +570,22 @@ export default function SettingsScreen() {
             }
           />
 
+          <ToggleRow
+            label="Weekly automatic backup"
+            caption={
+              'Off by default. When TaskFlow opens and a week has passed, it writes a dated JSON copy into the app’s own backup folder and keeps the last four — so a bad week never overwrites a good copy. A copy written silently into your phone’s shared storage is not possible without a heavier dependency, so use Export JSON when you want the file somewhere else.'
+            }
+            value={weeklyBackup}
+            onChange={(next) => {
+              setWeeklyBackup(next);
+              if (next) void runWeeklyBackupNow();
+            }}
+          />
+          <Row
+            label="Last automatic backup"
+            value={lastBackupAt ? new Date(lastBackupAt).toLocaleString() : 'never'}
+          />
+
           <View style={{ flexDirection: 'row', gap: theme.spacing.sm, flexWrap: 'wrap' }}>
             <Chip
               label="Export JSON"
@@ -612,6 +664,16 @@ export default function SettingsScreen() {
             Every feature ships unlocked: unlimited projects and subtasks, AI breakdown, location reminders,
             actionable snooze, focus timer, habit analytics and themes. No paywall, no tiers.
           </Text>
+          <Chip
+            label="Show the tour again"
+            icon="school-outline"
+            accessibilityLabel="Replay the first-run overview"
+            onPress={() => {
+              // The overlay lives in the root layout, so turning the flag off is
+              // all it takes for the tour to be back over this screen.
+              setOnboarded(false);
+            }}
+          />
           <Divider />
           <Text variant="micro" color={theme.colors.textTertiary}>
             VERSION {Constants.expoConfig?.version ?? '—'} · BUILT WITH EXPO + SQLITE + SUPABASE
@@ -627,13 +689,18 @@ export default function SettingsScreen() {
         visible={importOpen}
         onClose={() => setImportOpen(false)}
         title="Import TaskFlow data"
-        subtitle="Paste the contents of a backup file. Existing items are kept."
+        subtitle="Paste a backup file, check what it would add, then apply it. Items already on this device are kept as they are."
         heightRatio={0.7}
       >
         <View style={{ gap: theme.spacing.md, paddingTop: theme.spacing.lg }}>
           <TextInput
             value={importText}
-            onChangeText={setImportText}
+            onChangeText={(next) => {
+              setImportText(next);
+              // The pasted file changed, so any plan from the previous one is
+              // about a different file — drop it rather than applying it.
+              setImportPlan(null);
+            }}
             multiline
             placeholder='{"version":1,"tasks":[…]}'
             placeholderTextColor={theme.colors.textTertiary}
@@ -650,15 +717,32 @@ export default function SettingsScreen() {
               },
             ]}
           />
-          <View style={{ flexDirection: 'row', gap: theme.spacing.sm }}>
+          <View style={{ flexDirection: 'row', gap: theme.spacing.sm, flexWrap: 'wrap' }}>
             <Chip
-              label={busy ? 'Importing…' : 'Import'}
-              icon="push-outline"
-              selected
-              accessibilityLabel="Import the pasted data"
-              onPress={() => void handleImport(importText)}
+              label={busy ? 'Working…' : 'Check the file'}
+              icon="search-outline"
+              selected={importPlan === null}
+              accessibilityLabel="Check the pasted file"
+              onPress={() => void handleCheckImport(importText)}
             />
-            <Chip label="Cancel" accessibilityLabel="Cancel the import" onPress={() => setImportOpen(false)} />
+            {importPlan && importPlan.totalNew > 0 ? (
+              <Chip
+                label={busy ? 'Importing…' : `Add ${importPlan.totalNew} item${importPlan.totalNew === 1 ? '' : 's'}`}
+                icon="push-outline"
+                selected
+                accessibilityLabel="Import the pasted data"
+                onPress={() => void handleApplyImport(importText)}
+              />
+            ) : null}
+            <Chip
+              label="Cancel"
+              accessibilityLabel="Cancel the import"
+              onPress={() => {
+                setImportOpen(false);
+                setImportPlan(null);
+                setDataNote(null);
+              }}
+            />
           </View>
           {dataNote ? (
             <Text variant="caption" color={theme.colors.textSecondary}>

@@ -7,6 +7,7 @@ import { Animated, Linking, StyleSheet, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AppLock } from '@/components/AppLock';
+import { OnboardingTour } from '@/components/OnboardingTour';
 import { PermissionGate } from '@/components/PermissionSheet';
 import { Text } from '@/components/ui';
 import {
@@ -16,6 +17,7 @@ import {
   subscribeToNotificationResponses,
   type NotificationOutcome,
 } from '@/services/notifications';
+import { runWeeklyBackupIfDue } from '@/services/data/weeklyBackup';
 import { completeSignInFromUrl, isSupabaseConfigured } from '@/services/supabase/client';
 import { usePreferences } from '@/store/usePreferences';
 import { useStore } from '@/store/useStore';
@@ -44,6 +46,14 @@ export default function RootLayout() {
   useEffect(() => {
     void applyDndBypassPreference(dndBypass);
   }, [dndBypass]);
+
+  // The automatic backup has no background worker: it runs once per launch and
+  // does nothing unless a week has passed and the user asked for it.
+  const preferencesHydrated = usePreferences((state) => state.hydrated);
+  useEffect(() => {
+    if (!preferencesHydrated) return;
+    void runWeeklyBackupIfDue();
+  }, [preferencesHydrated]);
 
   /**
    * Actionable notification taps mutate data outside React, so we always
@@ -148,6 +158,9 @@ function ThemedShell({
 
       {/* Explain-then-ask gate for every OS permission the app requests. */}
       <PermissionGate />
+
+      {/* First-install overview: four cards, once, skippable from the start. */}
+      <OnboardingTour />
 
       {lastOutcome ? (
         <Animated.View
