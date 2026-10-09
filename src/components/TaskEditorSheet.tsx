@@ -56,6 +56,7 @@ export function TaskEditorSheet({ task, visible, onClose }: TaskEditorSheetProps
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const saveTemplate = usePreferences((s) => s.saveTemplate);
+  const experimental = usePreferences((s) => s.experimental);
 
   useEffect(() => {
     if (!task) return;
@@ -301,7 +302,13 @@ export function TaskEditorSheet({ task, visible, onClose }: TaskEditorSheetProps
           </View>
         </Section>
 
-        {/* Location reminder */}
+        {/*
+          Location reminder — gated behind Settings → Experimental. The feature
+          is a preview: the pin can only be dropped where you are standing, the
+          radius and direction are fixed, and the banner carries no actions. A
+          saved reminder is never deleted, only hidden while the switch is off.
+        */}
+        {experimental ? (
         <Section title="Place reminder" icon="location-outline">
           {task.locationReminder ? (
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm }}>
@@ -327,6 +334,7 @@ export function TaskEditorSheet({ task, visible, onClose }: TaskEditorSheetProps
             />
           )}
         </Section>
+        ) : null}
 
         <Divider />
 

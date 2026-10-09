@@ -23,6 +23,7 @@ const WEEKLY_GOAL_KEY = 'taskflow.insights.weeklyGoalTasks';
 const TEMPLATES_KEY = 'taskflow.capture.templates';
 const LAST_TASK_KEY = 'taskflow.capture.lastTask';
 const REVIEW_KEY = 'taskflow.review.lastDismissed';
+const EXPERIMENTAL_KEY = 'taskflow.experimental.features';
 
 /** A deliberate tap always wins over a slow hydration read. */
 let userTouched = false;
@@ -96,6 +97,20 @@ interface PreferencesState {
   /** `${dateKey}:${kind}` of the last review card the user dismissed. */
   lastReviewDismissed: string | null;
   setLastReviewDismissed: (next: string) => void;
+
+  /**
+   * Reveal the parts of the app that are deliberately unfinished.
+   *
+   * Off by default. Everything behind this switch is *working* but not whole —
+   * place reminders, today, can only be placed at the current position, with a
+   * fixed radius and direction. Shipping that as if it were finished is how a
+   * half-built feature gets mistaken for a broken one; behind a switch it is a
+   * preview the user opts into. Nothing is hidden away silently, and nothing is
+   * deleted when it is off: existing place reminders stay in the database and
+   * simply stop being armed.
+   */
+  experimental: boolean;
+  setExperimental: (next: boolean) => void;
 }
 
 /** A saved capture line, replayed through the same parser as typed input. */
@@ -234,6 +249,13 @@ export const usePreferences = create<PreferencesState>((set) => ({
     set({ lastReviewDismissed: next });
     persist(REVIEW_KEY, next);
   },
+
+  experimental: false,
+  setExperimental: (next) => {
+    userTouched = true;
+    set({ experimental: next });
+    persist(EXPERIMENTAL_KEY, next ? 'true' : 'false');
+  },
 }));
 
 /**
@@ -255,6 +277,7 @@ Promise.all([
   AsyncStorage.getItem(TEMPLATES_KEY),
   AsyncStorage.getItem(LAST_TASK_KEY),
   AsyncStorage.getItem(REVIEW_KEY),
+  AsyncStorage.getItem(EXPERIMENTAL_KEY),
 ])
   .then(([
     autoStart,
@@ -271,6 +294,7 @@ Promise.all([
     templates,
     lastTask,
     review,
+    experimental,
   ]) => {
     if (userTouched) return;
     const patch: Partial<PreferencesState> = {};
@@ -301,6 +325,9 @@ Promise.all([
     }
     if (lastTask) patch.lastTaskText = lastTask;
     if (review) patch.lastReviewDismissed = review;
+    if (experimental === 'true' || experimental === 'false') {
+      patch.experimental = experimental === 'true';
+    }
     usePreferences.setState({ ...patch, hydrated: true });
   })
   .catch(() => {

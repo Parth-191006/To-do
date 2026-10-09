@@ -45,6 +45,7 @@ import { parseTaskInput } from '@/nlp/parser';
 import { generateBreakdown } from '@/services/ai/breakdown';
 import { scheduleTaskNotifications, cancelTaskNotifications } from '@/services/notifications/scheduler';
 import { syncGeofences } from '@/services/notifications/geofence';
+import { usePreferences } from '@/store/usePreferences';
 import { toDateKey } from '@/utils/id';
 
 export type StoreStatus = 'idle' | 'loading' | 'ready' | 'error';
@@ -180,8 +181,10 @@ export const useStore = create<AppState>()((set, get) => ({
     try {
       const data = await loadEverything();
       set({ ...data, status: 'ready' });
+      // Place reminders sit behind Settings → Experimental. With the preview off
+      // nothing is armed — the saved reminders stay in the database untouched.
       const withLocation = data.tasks.filter((task) => task.locationReminder);
-      if (withLocation.length > 0) {
+      if (withLocation.length > 0 && usePreferences.getState().experimental) {
         await syncGeofences(withLocation).catch(() => undefined);
       }
     } catch (error) {
@@ -204,7 +207,9 @@ export const useStore = create<AppState>()((set, get) => ({
     // reminders need re-arming (add, edit, complete, delete). The sync is
     // signature-gated, so it costs one string compare when nothing about the
     // fences changed — previously they were only re-armed on a cold start.
-    void syncGeofences(tasks).catch(() => undefined);
+    if (usePreferences.getState().experimental) {
+      void syncGeofences(tasks).catch(() => undefined);
+    }
   },
 
   async addTaskFromInput(raw, overrides = {}) {

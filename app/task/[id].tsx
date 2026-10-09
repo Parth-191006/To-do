@@ -12,6 +12,7 @@ import { Card, Chip, EmptyState, Text } from '@/components/ui';
 import type { Attachment } from '@/domain/types';
 import { describeRecurrence } from '@/nlp/parser';
 import { childrenOf } from '@/store/selectors';
+import { usePreferences } from '@/store/usePreferences';
 import { useStore } from '@/store/useStore';
 import { useTheme } from '@/theme/ThemeProvider';
 import { playPauseLabel, toggleTaskLabel } from '@/utils/a11y';
@@ -26,6 +27,7 @@ export default function TaskDetailScreen() {
   const tasks = useStore((state) => state.tasks);
   const projects = useStore((state) => state.projects);
   const tags = useStore((state) => state.tags);
+  const experimental = usePreferences((state) => state.experimental);
   const toggleTask = useStore((state) => state.toggleTask);
   const removeTask = useStore((state) => state.removeTask);
   const breakDownTask = useStore((state) => state.breakDownTask);
@@ -132,7 +134,8 @@ export default function TaskDetailScreen() {
               <Chip label={`${task.estimateMinutes}m`} icon="hourglass-outline" />
             ) : null}
             {project ? <Chip label={project.name} color={project.color} icon="folder-outline" /> : null}
-            {task.locationReminder ? (
+            {/* Place reminders are an Experimental preview — hidden, not deleted. */}
+            {experimental && task.locationReminder ? (
               <Chip label={task.locationReminder.label} icon="location-outline" color={theme.colors.success} />
             ) : null}
           </View>

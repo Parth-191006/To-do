@@ -12,9 +12,11 @@ import { PermissionGate } from '@/components/PermissionSheet';
 import { Text } from '@/components/ui';
 import {
   applyDndBypassPreference,
+  clearGeofences,
   configureNotifications,
   consumeInitialNotificationResponse,
   subscribeToNotificationResponses,
+  syncGeofences,
   type NotificationOutcome,
 } from '@/services/notifications';
 import { runWeeklyBackupIfDue } from '@/services/data/weeklyBackup';
@@ -54,6 +56,23 @@ export default function RootLayout() {
     if (!preferencesHydrated) return;
     void runWeeklyBackupIfDue();
   }, [preferencesHydrated]);
+
+  // Place reminders are an Experimental preview, so the switch has to reach the
+  // OS as well as the UI. Turning it off disarms the fences Android is already
+  // holding (a saved reminder is kept, never deleted); turning it back on
+  // re-arms them, which the signature gate would otherwise skip as "unchanged".
+  // Waiting for hydration matters: the default is "off", and acting on it a
+  // frame before the saved value lands would tear down fences the user still
+  // wants.
+  const experimental = usePreferences((state) => state.experimental);
+  useEffect(() => {
+    if (!preferencesHydrated) return;
+    if (experimental) {
+      void syncGeofences(useStore.getState().tasks).catch(() => undefined);
+    } else {
+      void clearGeofences().catch(() => undefined);
+    }
+  }, [experimental, preferencesHydrated]);
 
   /**
    * Actionable notification taps mutate data outside React, so we always

@@ -74,6 +74,8 @@ export default function SettingsScreen() {
   const setOnboarded = usePreferences((state) => state.setOnboarded);
   const dailyGoalMinutes = usePreferences((state) => state.dailyGoalMinutes);
   const weeklyGoalTasks = usePreferences((state) => state.weeklyGoalTasks);
+  const experimental = usePreferences((state) => state.experimental);
+  const setExperimental = usePreferences((state) => state.setExperimental);
 
   const [backup, setBackup] = useState<{ exists: boolean; modifiedAt?: number }>({ exists: false });
   const [importOpen, setImportOpen] = useState(false);
@@ -661,6 +663,35 @@ export default function SettingsScreen() {
             accessibilityLabel={t('settings.chipResetA11y')}
             onPress={() => void handleReset()}
           />
+        </Section>
+
+        <Section title={t('settings.sectionExperimental')} icon="flask-outline">
+          <ToggleRow
+            label={t('settings.experimentalLabel')}
+            caption={t('settings.experimentalCaption')}
+            value={experimental}
+            onChange={setExperimental}
+          />
+
+          {/*
+            Named explicitly rather than left as "some features": a switch that
+            says "experimental" and hides its contents behind a shrug is a worse
+            deal than one that tells you exactly what you are turning on — and
+            what is still missing from it.
+          */}
+          <View style={{ gap: 4 }}>
+            <Row
+              label={t('settings.experimentalPlacesTitle')}
+              value={experimental ? t('common.on') : t('common.off')}
+            />
+            <Text variant="caption" color={theme.colors.textSecondary}>
+              {t('settings.experimentalPlacesWhy')}
+            </Text>
+          </View>
+
+          <Text variant="micro" color={theme.colors.textTertiary}>
+            {t('settings.experimentalMicro')}
+          </Text>
         </Section>
 
         <Section title="TaskFlow" icon="information-circle-outline">

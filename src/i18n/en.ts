@@ -25,6 +25,8 @@ export const en = {
   /* ------------------------------------------------------------- shared */
   'common.working': 'Working…',
   'common.cancel': 'Cancel',
+  'common.on': 'On',
+  'common.off': 'Off',
 
   /* --------------------------------------------------------------- Today */
   'today.openSettings': 'Open settings',
@@ -181,6 +183,17 @@ export const en = {
     'EXPORTS CARRY EVERY TASK, LIST, TAG AND HABIT (JSON) OR ONE ROW PER TASK (CSV). CLEARING LOCAL DATA WRITES A BACKUP FIRST, SO IT CAN BE UNDONE.',
   'settings.chipReset': 'Reset local data',
   'settings.chipResetA11y': 'Clear all local data',
+
+  /* experimental */
+  'settings.sectionExperimental': 'Experimental',
+  'settings.experimentalLabel': 'Preview unfinished features',
+  'settings.experimentalCaption':
+    'Off by default. Everything behind this switch works, but it is not whole yet — turning it on is opting into a preview, not into a finished feature. Nothing already saved is deleted when it is off; those features simply stop being shown and stop being armed.',
+  'settings.experimentalPlacesTitle': 'Place reminders',
+  'settings.experimentalPlacesWhy':
+    'A place reminder can only be dropped where you are standing, with a fixed 150 m radius, and it always fires on arrival — “when I leave” and searching for an address are not built. Its notification also arrives on the default channel with no Complete or Snooze button, unlike every timed reminder.',
+  'settings.experimentalMicro':
+    'PLACE REMINDERS ARE THE ONLY PREVIEW TODAY. WHEN THIS IS OFF, ANY LOCATION REMINDER YOU ALREADY SAVED IS KEPT IN THE DATABASE AND SIMPLY NOT ARMED — TURNING IT BACK ON RE-ARMS IT.',
 
   /* about */
   'settings.tagline': 'Capture, focus, finish.',
