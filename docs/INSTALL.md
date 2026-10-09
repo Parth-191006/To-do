@@ -101,33 +101,106 @@ Requires Android Studio/SDK + JDK 17 on the PC.
 
 ---
 
-## Release with your own keystore (optional)
+## Create the release keystore (once)
 
-For one stable signature across builds (install-over-the-top updates, Play
-Store, sharing with others):
+**Required.** The release workflow will not build without it: it never creates a
+key of its own, because a key minted per run cannot install over an app that is
+already on a phone (Android treats a signature change as a different app, and
+the only way round it is an uninstall, which wipes local data).
 
-1. Create a keystore once:
+You need **four repository secrets** (repo → Settings → Secrets and variables →
+Actions → *New repository secret*):
 
-   ```bash
-   keytool -genkeypair -v -keystore taskflow-release.keystore \
-     -alias taskflow -keyalg RSA -keysize 2048 -validity 10000
-   ```
+| Secret | Value |
+| --- | --- |
+| `ANDROID_KEYSTORE_BASE64` | base64 of the `.keystore` file — one line, no wrapping |
+| `ANDROID_KEYSTORE_PASSWORD` | the store password you chose |
+| `ANDROID_KEY_ALIAS` | the key alias inside the keystore (`taskflow` below) |
+| `ANDROID_KEY_PASSWORD` | the key password (same as the store password with a modern, PKCS#12 keystore) |
 
-2. Base64 it and add **four GitHub repo secrets**
-   (Settings → Secrets and variables → Actions):
+### A. Create a new key (or reuse one you already have)
 
-   | Secret | Value |
-   | --- | --- |
-   | `KEYSTORE_BASE64` | `base64 -w0 taskflow-release.keystore` output |
-   | `KEYSTORE_PASSWORD` | the store password you chose |
-   | `KEY_ALIAS` | `taskflow` |
-   | `KEY_PASSWORD` | the key password you chose |
+`keytool` ships with any JDK; on a machine without one:
 
-3. That's it — the workflow already prefers these secrets when present (the
-   keystore job decodes `KEYSTORE_BASE64` instead of minting a key, and the
-   sign step reads the passwords/alias from secrets with `taskflow-ci` /
-   `taskflow` only as fallbacks). Every APK now shares your identity and can
-   update the previous install in place.
+```bash
+winget install EclipseAdoptium.Temurin.17.JDK     # Windows (open a new shell after)
+brew install openjdk@17                            # macOS
+```
+
+Create the keystore — keep it **outside** the repository (it is ignored either
+way: `*.jks`/`*.keystore` are in `.gitignore`, but a signing key should never sit
+in a working tree):
+
+```bash
+keytool -genkeypair -v -keystore taskflow-release.keystore \
+  -alias taskflow -keyalg RSA -keysize 2048 -validity 10000
+```
+
+It prompts for the store password, the key password and a name/organisation.
+Use a long password and store it in a password manager **with a copy of the
+`.keystore` file** — losing either one means the next release has a new
+identity. To check an existing keystore instead:
+
+```bash
+keytool -list -v -keystore taskflow-release.keystore    # prints the aliases
+```
+
+### B. Base64 it and set the secrets
+
+Git Bash / Linux:
+
+```bash
+base64 -w0 taskflow-release.keystore > keystore.b64
+```
+
+macOS (no `-w0`):
+
+```bash
+base64 -i taskflow-release.keystore | tr -d '\n' > keystore.b64
+```
+
+PowerShell (copies straight to the clipboard):
+
+```powershell
+[Convert]::ToBase64String([IO.File]::ReadAllBytes("taskflow-release.keystore")) | Set-Clipboard
+```
+
+Paste that single line into `ANDROID_KEYSTORE_BASE64`, then add the other three
+secrets from step A.
+
+### C. Check it without cutting a release
+
+Actions → **Android APK** → *Run workflow* (branch `main`). The first steps
+report the signing certificate's SHA-256 fingerprint on the run's **Summary**
+page, and the four secrets are validated before the build starts — a wrong
+alias, store password or key password fails in seconds with a message naming the
+secret to fix, instead of 20 minutes into Gradle.
+
+Once the secrets are set, every APK shares one identity and a newer build
+installs over the old one with data intact.
+
+> **The retired CI key.** Releases up to v1.2.3 were signed with a key that a
+> previous version of this workflow generated on the runner and cached, with the
+> password `taskflow-ci` committed in the workflow file. That identity is gone:
+> its password was public, so anyone could have signed an update with it. Release
+> APKs now come only from the secrets above.
+
+### If your existing keystore only exists in the old CI cache
+
+GitHub has no way to download the Actions cache through the UI, so a key that
+was minted on a runner and only ever cached cannot be recovered from the
+repository. Two options:
+
+- **Start fresh (recommended).** Follow A–C above. If a phone already has
+  TaskFlow installed under the old signature, Android asks you to uninstall it
+  once — export first from **Settings → Data → Export**, then re-import after
+  installing.
+- **Keep the exact old signature.** Make the repository private temporarily,
+  run a one-off workflow that restores the cache entry
+  (`key: taskflow-release-keystore-v2`) and uploads it as an artifact, download
+  it, set the secrets, delete that run and the temporary workflow, then make the
+  repository public again. This is only worth it if you must preserve installs
+  of the old signature; ask and the workflow can be added for the purpose.
 
 ---
 

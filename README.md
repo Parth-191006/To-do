@@ -6,7 +6,6 @@
 
 [![CI](https://img.shields.io/github/actions/workflow/status/Parth-191006/To-do/ci.yml?branch=main&label=CI)](https://github.com/Parth-191006/To-do/actions/workflows/ci.yml)
 [![Latest release](https://img.shields.io/github/v/release/Parth-191006/To-do?label=release&color=0D9488)](https://github.com/Parth-191006/To-do/releases/latest)
-[![Tests](https://img.shields.io/badge/tests-115%20assertions%20%E2%9C%93-0D9488)](#verification)
 [![Expo SDK](https://img.shields.io/badge/Expo%20SDK-57-111827?logo=expo)](https://expo.dev)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
@@ -251,7 +250,7 @@ Android is the shipping target.
 ## Verification
 
 ```bash
-npm run verify                      # tsc --noEmit + 115 assertions, all green
+npm run verify                      # tsc --noEmit + every Vitest suite
 npm run verify:brand                # 13 checks that the brand assets are correct
 npx expo-doctor                     # dependency & config checks
 npx expo export --platform android  # bundling smoke test

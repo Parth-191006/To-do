@@ -1,0 +1,48 @@
+version: 2
+
+# Keeps the two dependency surfaces current: npm packages (Expo/React Native and
+# everything else) and the actions used by the workflows themselves. Weekly, so
+# bumps land in a reviewable trickle instead of a flood, and grouped where the
+# versions have to move together.
+#
+# Expo note: `expo` and the `expo-*` packages are versioned in lockstep with the
+# SDK, and `npx expo install --fix` is the authority on what matches. The Expo
+# group below keeps them in one PR so a half-upgraded SDK is never merged.
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+    labels:
+      - dependencies
+    groups:
+      expo:
+        patterns:
+          - expo
+          - expo-*
+          - "@expo/*"
+          - react-native
+          - react-native-*
+          - "@react-native/*"
+          - react
+          - react-dom
+      dev-tooling:
+        patterns:
+          - typescript
+          - vite
+          - vitest
+          - "@types/*"
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(ci)"
+    labels:
+      - dependencies
+      - ci

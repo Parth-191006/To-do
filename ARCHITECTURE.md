@@ -271,7 +271,7 @@ weekday, daily ones to today.
 **Verification.**
 
 ```bash
-npx vitest run tests/nlp.test.ts    # 16 assertions, runs the real parser
+npx vitest run tests/nlp.test.ts    # runs the real parser end to end
 ```
 
 This suite caught three genuine bugs during development: an off-by-one in the
@@ -519,7 +519,7 @@ runtime.
 
 | Area | Current | Recommended |
 | --- | --- | --- |
-| Tests | Vitest (`tests/`, 108 assertions): parser, focus clock, habits, schema, geofence, sync merge, FTS | Repository tests against a full fixture database, plus a component/interaction layer |
+| Tests | Vitest (`tests/`, eight suites): parser, focus clock, habits, schema, geofence, sync merge, FTS, formatting | Repository tests against a full fixture database, plus a component/interaction layer |
 | Background sync | Manual + on launch | `expo-background-task` periodic sync |
 | Auth | Anonymous local user | Supabase OTP sign-in already stubbed; wire `signInWithOtp` into onboarding |
 | Conflict display | Per-field merge for tasks, row-level LWW elsewhere | Surface any remaining `sync_state='conflict'` row for manual resolution |

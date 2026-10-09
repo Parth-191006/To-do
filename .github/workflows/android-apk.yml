@@ -2,35 +2,33 @@ name: Android APK
 
 # What this does
 # --------------
-#   - push a tag like v1.1.0  →  build + sign one arm64-v8a APK (~50 MB, every
+#   - push a tag like v1.2.4  →  build + sign one arm64-v8a APK (~50 MB, every
 #                                phone made since ~2016) and attach it — plus a
 #                                permanent-name copy — to a GitHub Release (the
 #                                easiest thing to download on a phone)
 #   - run it manually          →  Actions tab → "Android APK" → Run workflow
-#   - push to main             →  only the cheap keystore job runs (seconds); it
-#                                refreshes the signing identity in the cache
+#                                (also the quickest way to re-check the signing
+#                                secrets without cutting a tag)
 #
-# Why the keystore has its own job
+# Where the signing key comes from
 # --------------------------------
-# Android refuses to update an installed app across a signature change, and the
-# only way round that is to uninstall — which wipes local data. So every build
-# must be signed with the SAME key.
+# The keystore is a repository secret, never a build product:
 #
-# Caches are scoped per ref, and a tag-triggered run can only read caches written
-# by the *default branch*. A keystore cached from a tag is therefore invisible to
-# the next tag, which is how every build ended up with a different identity. The
-# `keystore` job below therefore mints the key on a main run (seconds, no build)
-# and every later tag restores it from the default branch.
+#   ANDROID_KEYSTORE_BASE64     base64 of the .keystore file
+#   ANDROID_KEYSTORE_PASSWORD   the store password
+#   ANDROID_KEY_ALIAS           the key alias inside the keystore
+#   ANDROID_KEY_PASSWORD        the key password
 #
-# Note on the cache key: entries are stored per (key, ref), and a restore looks
-# at the current ref BEFORE falling back to the default branch. So a keystore ever
-# saved from a tag silently shadows the one on main. If a build reports a
-# different fingerprint than the one on main, bump the `-vN` suffix below so the
-# stale tag-scoped entry stops matching.
+# This workflow NEVER generates a key. Android refuses to update an installed
+# app across a signature change, and the only way round that is to uninstall —
+# which wipes local data. A key minted per run would therefore break every
+# install in turn, so a missing secret is a failed build with instructions, not
+# a freshly minted identity. See docs/INSTALL.md → "Create the release keystore".
 #
-# To pin the key yourself instead, add these repository secrets and the workflow
-# will prefer them — see docs/INSTALL.md:
-#   KEYSTORE_BASE64, KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD
+# Earlier revisions cached a CI-minted key (`taskflow` / `taskflow-ci`). That
+# identity is retired: its password was committed in a public repository, so it
+# could be used by anyone to sign an update. Releases now use only a key that
+# lives in secrets.
 #
 # Other build-time notes:
 #   - A cold Gradle build is ~20–40 min on public runners; gradle/actions caches
@@ -41,8 +39,6 @@ name: Android APK
 on:
   workflow_dispatch:
   push:
-    branches:
-      - main
     tags:
       - "v*"
 
@@ -50,100 +46,105 @@ permissions:
   contents: write
 
 jobs:
-  # Seconds, not minutes. On a main run this is what establishes the stable
-  # signing identity for every future build.
-  keystore:
-    name: Prepare signing keystore
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - name: Restore cached keystore
-        uses: actions/cache/restore@v4
-        with:
-          path: taskflow-release.keystore
-          key: taskflow-release-keystore-v2
-
-      # GitHub does not expose the `secrets` context to step `if` blocks, so the
-      # choice between secret / cached / freshly minted is made in bash.
-      - name: Prepare signing keystore
-        id: keystore
-        env:
-          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
-          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
-        run: |
-          set -euo pipefail
-          if [ -n "$KEYSTORE_BASE64" ]; then
-            echo "$KEYSTORE_BASE64" | base64 -d > taskflow-release.keystore
-            echo "Using the keystore supplied through repository secrets."
-            echo "source=secret" >> "$GITHUB_OUTPUT"
-          elif [ -f taskflow-release.keystore ]; then
-            echo "Reusing the cached keystore — this APK can update an existing install."
-            echo "source=cache" >> "$GITHUB_OUTPUT"
-          else
-            keytool -genkeypair -v \
-              -keystore taskflow-release.keystore -alias taskflow \
-              -keyalg RSA -keysize 2048 -validity 10000 \
-              -storepass taskflow-ci -keypass taskflow-ci \
-              -dname "CN=TaskFlow, OU=CI, O=TaskFlow"
-            echo "Minted a new keystore."
-            if [ "${GITHUB_REF}" = "refs/heads/${DEFAULT_BRANCH}" ]; then
-              echo "On the default branch, so this key is cached for every later build."
-            else
-              echo "::warning::A new key was minted on '${GITHUB_REF}'. Tag runs can only read default-branch caches, so this signature will not be reused — push to ${DEFAULT_BRANCH} first to pin it."
-            fi
-            echo "source=generated" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Save keystore for future builds
-        if: steps.keystore.outputs.source == 'generated' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
-        continue-on-error: true
-        uses: actions/cache/save@v4
-        with:
-          path: taskflow-release.keystore
-          key: taskflow-release-keystore-v2
-
-      # Printed on the run's Summary page so a signature mismatch can be
-      # diagnosed without digging through 30 minutes of logs.
-      - name: Show signing certificate fingerprint
-        env:
-          SOURCE: ${{ steps.keystore.outputs.source }}
-          KS_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD != '' && secrets.KEYSTORE_PASSWORD || 'taskflow-ci' }}
-        run: |
-          set -uo pipefail
-          FINGERPRINT=$(keytool -list -v -keystore taskflow-release.keystore \
-            -storepass "$KS_PASSWORD" -alias taskflow 2>/dev/null \
-            | grep -i 'SHA256:' | head -1 | tr -s ' ' | cut -d' ' -f2-) || true
-          echo "Signing keystore source: ${SOURCE:-unknown}"
-          echo "SHA-256 fingerprint: ${FINGERPRINT:-unknown}"
-          {
-            echo '### Signing identity'
-            echo ''
-            echo '| Field | Value |'
-            echo '| --- | --- |'
-            echo "| Source | ${SOURCE:-unknown} |"
-            echo "| Ref | ${GITHUB_REF} |"
-            echo "| SHA-256 | ${FINGERPRINT:-unknown} |"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Upload keystore for the build job
-        uses: actions/upload-artifact@v4
-        with:
-          name: signing-keystore
-          path: taskflow-release.keystore
-          retention-days: 1
-
-  # The expensive job. Skipped on branch pushes so that keeping the signing
-  # identity alive costs seconds rather than half an hour.
   build:
     name: Build release APK
-    needs: keystore
-    if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 90
 
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+
+      # Runs before npm ci and the JDK setup so a signing misconfiguration costs
+      # seconds, not a 20-minute Gradle build with a surprise at the end. GitHub
+      # does not expose the `secrets` context to step `if` blocks, so the check
+      # is made in bash.
+      - name: Check the signing secrets are present
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          missing=()
+          [ -n "${ANDROID_KEYSTORE_BASE64:-}" ] || missing+=(ANDROID_KEYSTORE_BASE64)
+          [ -n "${ANDROID_KEYSTORE_PASSWORD:-}" ] || missing+=(ANDROID_KEYSTORE_PASSWORD)
+          [ -n "${ANDROID_KEY_ALIAS:-}" ] || missing+=(ANDROID_KEY_ALIAS)
+          [ -n "${ANDROID_KEY_PASSWORD:-}" ] || missing+=(ANDROID_KEY_PASSWORD)
+
+          if [ "${#missing[@]}" -gt 0 ]; then
+            {
+              echo '### Release signing is not configured'
+              echo ''
+              echo 'This build was stopped because these repository secrets are missing:'
+              echo ''
+              for name in "${missing[@]}"; do echo "- \`$name\`"; done
+              echo ''
+              echo 'This workflow never generates a keystore: a key minted per build'
+              echo 'cannot install over an existing app. Add the four secrets under'
+              echo '**Settings → Secrets and variables → Actions**, then re-run.'
+              echo ''
+              echo 'Step-by-step commands: [docs/INSTALL.md → Create the release keystore](../blob/main/docs/INSTALL.md#create-the-release-keystore-once).'
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::error title=Signing secrets missing::Missing repository secret(s): ${missing[*]}. See the run summary and docs/INSTALL.md. No keystore was generated."
+            exit 1
+          fi
+
+          echo "All four signing secrets are set."
+
+      - name: Restore the signing keystore from secrets
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 -d > taskflow-release.keystore
+
+          # Both passwords and the alias are exercised here, so a mistyped secret
+          # fails now instead of after the build.
+          if ! keytool -list -keystore taskflow-release.keystore \
+                 -storepass "$ANDROID_KEYSTORE_PASSWORD" -alias "$ANDROID_KEY_ALIAS" \
+                 > /dev/null 2>keytool-list.err; then
+            echo "::error title=Keystore secrets are wrong::ANDROID_KEYSTORE_BASE64 decoded, but ANDROID_KEYSTORE_PASSWORD and/or ANDROID_KEY_ALIAS do not open it."
+            cat keytool-list.err || true
+            rm -f keytool-list.err taskflow-release.keystore
+            exit 1
+          fi
+          rm -f keytool-list.err
+
+          # keytool -certreq needs the *key* password, which is the only cheap way
+          # to prove ANDROID_KEY_PASSWORD before apksigner runs at the very end.
+          if ! keytool -certreq -keystore taskflow-release.keystore \
+                 -alias "$ANDROID_KEY_ALIAS" \
+                 -storepass "$ANDROID_KEYSTORE_PASSWORD" \
+                 -keypass "$ANDROID_KEY_PASSWORD" \
+                 -file /dev/null > /dev/null 2>keytool-key.err; then
+            echo "::error title=Key password does not match::ANDROID_KEY_PASSWORD is not the password of key alias '${ANDROID_KEY_ALIAS}' in ANDROID_KEYSTORE_BASE64."
+            cat keytool-key.err || true
+            rm -f keytool-key.err taskflow-release.keystore
+            exit 1
+          fi
+          rm -f keytool-key.err
+
+          # Printed on the run's Summary page so a signature change can be
+          # diagnosed without digging through 30 minutes of logs.
+          FINGERPRINT=$(keytool -list -v -keystore taskflow-release.keystore \
+            -storepass "$ANDROID_KEYSTORE_PASSWORD" -alias "$ANDROID_KEY_ALIAS" \
+            | grep -i 'SHA256:' | head -1 | tr -s ' ' | cut -d' ' -f2-)
+          echo "Signing keystore restored from ANDROID_KEYSTORE_BASE64."
+          {
+            echo '### Signing identity'
+            echo ''
+            echo '| Field | Value |'
+            echo '| --- | --- |'
+            echo '| Source | `ANDROID_KEYSTORE_BASE64` secret |'
+            echo "| Alias | \`${ANDROID_KEY_ALIAS}\` |"
+            echo "| Ref | \`${GITHUB_REF}\` |"
+            echo "| SHA-256 | ${FINGERPRINT:-unknown} |"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Set up Node
         uses: actions/setup-node@v5
@@ -224,16 +225,11 @@ jobs:
           cd android
           ./gradlew assembleRelease --no-daemon --stacktrace
 
-      - name: Fetch the signing keystore
-        uses: actions/download-artifact@v4
-        with:
-          name: signing-keystore
-
       - name: Align and sign every APK
         env:
-          KS_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD != '' && secrets.KEYSTORE_PASSWORD || 'taskflow-ci' }}
-          KS_ALIAS: ${{ secrets.KEY_ALIAS != '' && secrets.KEY_ALIAS || 'taskflow' }}
-          KS_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD != '' && secrets.KEY_PASSWORD || 'taskflow-ci' }}
+          KS_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KS_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KS_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           set -euo pipefail
           BT="$(ls -d "$ANDROID_HOME/build-tools"/* | sort -V | tail -1)"
@@ -286,6 +282,11 @@ jobs:
             done
           } >> "$GITHUB_STEP_SUMMARY"
 
+          # Never leave the decoded key lying around in the workspace. The runner
+          # is discarded either way; this keeps it out of any future artifact
+          # upload that forgets to exclude it.
+          rm -f taskflow-release.keystore
+
       - name: Upload artifact (every build)
         uses: actions/upload-artifact@v4
         with:
@@ -319,6 +320,8 @@ jobs:
             | `TaskFlow-latest.apk` | ~50 MB | permanent-name copy — use this link |
             | `TaskFlow-${{ github.ref_name }}-arm64-v8a.apk` | ~50 MB | same build, version-named |
 
-            Signed with the same key as previous releases, so a newer version
-            installs straight over an older one and keeps your data. Full guide:
+            Signed with the release key held in this repository's secrets. If
+            your installed build was signed with a *different* key, Android asks
+            you to uninstall once — export first from **Settings → Data →
+            Export** to keep your tasks. Full guide:
             [INSTALL.md](https://github.com/${{ github.repository }}/blob/main/docs/INSTALL.md).

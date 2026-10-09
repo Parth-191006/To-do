@@ -2,12 +2,14 @@ name: CI
 
 # What this does
 # --------------
-#   - every push and pull request → typecheck + the Vitest suites + a brand-asset
-#     regression check, so a broken build is caught before it is reviewed or
-#     tagged.
+#   - every push to main and every pull request → install, typecheck, the Vitest
+#     suites, a brand-asset regression check and an `expo export` bundling
+#     smoke test, so a broken build is caught before it is reviewed or tagged.
 #   - the release APK is NOT built here. That lives in android-apk.yml and runs
 #     on a `v*` tag (a cold Gradle build is 20–40 min; making every push wait on
-#     a phone build would make this badge meaningless).
+#     a phone build would make this badge meaningless). Branch pushes outside
+#     main are covered by the pull request run, so each commit is checked once
+#     instead of twice.
 #
 # Why Node 24
 # ----------
@@ -25,6 +27,8 @@ name: CI
 
 on:
   push:
+    branches:
+      - main
   pull_request:
 
 permissions:
@@ -55,8 +59,19 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Typecheck
+        run: npm run typecheck
+
       - name: Typecheck + unit suites
         run: npm run verify
+
+      # Bundling is the one step that exercises Metro, the router's file
+      # conventions and every import graph entry point — the failure mode a
+      # unit suite cannot see (a bad import path typechecks fine and only
+      # explodes when the bundle is built). No signing/keystore needed: this is
+      # a JS bundle, not an APK.
+      - name: Bundle the Android JS (export smoke test)
+        run: npx expo export --platform android
 
   brand:
     name: Brand assets
