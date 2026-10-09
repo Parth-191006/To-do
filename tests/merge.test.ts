@@ -13,6 +13,7 @@ import { describe, expect, it } from 'vitest';
 import {
   MERGEABLE_TASK_FIELDS,
   changedFields,
+  describeConflicts,
   mergeFieldMeta,
   mergeRow,
   parseFieldMeta,
@@ -323,6 +324,174 @@ describe('mergeRow', () => {
       remoteUpdatedAt: T1,
     });
     expect(restored.merged.deleted_at).toBeNull();
+  });
+});
+
+describe('same-field conflicts', () => {
+  it('reports nothing when the two devices edited different fields', () => {
+    // The case the per-field merge exists for: local wrote notes at T3, remote
+    // wrote the title at T2. Both survive and neither is a collision.
+    const result = mergeRow({
+      local: baseRow({ notes: 'my notes', sync_state: 'pending' }),
+      remote: baseRow({ title: 'Their title' }),
+      localMeta: { notes: T3 },
+      remoteMeta: { title: T2 },
+      localUpdatedAt: T3,
+      remoteUpdatedAt: T2,
+      localUnsynced: true,
+    });
+    expect(result.conflicts).toEqual([]);
+    expect(result.merged.title).toBe('Their title');
+    expect(result.merged.notes).toBe('my notes');
+  });
+
+  it('reports an unshared write that lost to a newer whole-row update', () => {
+    // Remote changed nothing but the title, yet its row is newer, so every
+    // field without a remote stamp falls back to that row timestamp — and our
+    // offline notes edit is the one paying for it. Silence here would be data
+    // loss the user never hears about.
+    const result = mergeRow({
+      local: baseRow({ notes: 'my notes', sync_state: 'pending' }),
+      remote: baseRow({ title: 'Their title' }),
+      localMeta: { notes: T2 },
+      remoteMeta: { title: T3 },
+      localUpdatedAt: T2,
+      remoteUpdatedAt: T3,
+      localUnsynced: true,
+    });
+    expect(result.merged.notes).toBe('first draft');
+    expect(result.conflicts).toEqual([
+      { field: 'notes', winner: 'remote', discarded: 'my notes', localAt: T2, remoteAt: T3 },
+    ]);
+  });
+
+  it('records the field when both sides stamped it and the newer one wins', () => {
+    const result = mergeRow({
+      local: baseRow({ title: 'My title', sync_state: 'pending' }),
+      remote: baseRow({ title: 'Their title' }),
+      localMeta: { title: T1 },
+      remoteMeta: { title: T3 },
+      localUpdatedAt: T1,
+      remoteUpdatedAt: T3,
+      localUnsynced: true,
+    });
+    expect(result.merged.title).toBe('Their title');
+    expect(result.conflicts).toHaveLength(1);
+    expect(result.conflicts[0]).toMatchObject({
+      field: 'title',
+      winner: 'remote',
+      discarded: 'My title',
+    });
+  });
+
+  it('records it the other way too, when our edit is the newer one', () => {
+    const result = mergeRow({
+      local: baseRow({ title: 'My newer title', sync_state: 'pending' }),
+      remote: baseRow({ title: 'Their older title' }),
+      localMeta: { title: T3 },
+      remoteMeta: { title: T1 },
+      localUpdatedAt: T3,
+      remoteUpdatedAt: T1,
+      localUnsynced: true,
+    });
+    expect(result.merged.title).toBe('My newer title');
+    expect(result.conflicts[0]).toMatchObject({ field: 'title', winner: 'local' });
+    expect(result.conflicts[0]?.discarded).toBe('Their older title');
+  });
+
+  it('resolves a same-field tie to the remote side, deterministically', () => {
+    const input = {
+      local: baseRow({ title: 'Local', sync_state: 'pending' as const }),
+      remote: baseRow({ title: 'Remote' }),
+      localMeta: { title: T2 },
+      remoteMeta: { title: T2 },
+      localUpdatedAt: T2,
+      remoteUpdatedAt: T2,
+    };
+    const first = mergeRow(input);
+    const second = mergeRow(input);
+    expect(first.merged.title).toBe('Remote');
+    expect(first.conflicts).toEqual([]); // equal stamps are the same write, not a collision
+    expect(second.merged.title).toBe(first.merged.title);
+    expect(second.tookRemote).toEqual(first.tookRemote);
+  });
+
+  it('stays quiet when the local write had already been pushed', () => {
+    // The other device simply edited after us: that is collaboration, not a
+    // conflict, and the activity feed should stay readable.
+    const result = mergeRow({
+      local: baseRow({ title: 'My title', sync_state: 'synced' }),
+      remote: baseRow({ title: 'Their title' }),
+      localMeta: { title: T1 },
+      remoteMeta: { title: T3 },
+      localUpdatedAt: T1,
+      remoteUpdatedAt: T3,
+      localUnsynced: false,
+    });
+    expect(result.merged.title).toBe('Their title');
+    expect(result.conflicts).toEqual([]);
+  });
+
+  it('lets a delete win, and says so when it takes a pending rename with it', () => {
+    const result = mergeRow({
+      local: baseRow({ title: 'Renamed offline', sync_state: 'pending' }),
+      remote: baseRow({ deleted_at: T3 }),
+      localMeta: { title: T1 },
+      remoteMeta: { deleted_at: T3 },
+      localUpdatedAt: T1,
+      remoteUpdatedAt: T3,
+      localUnsynced: true,
+    });
+    expect(result.merged.deleted_at).toBe(T3);
+    expect(result.tookRemote).toContain('deleted_at');
+    // The rename is the casualty, and it is reported rather than swallowed.
+    expect(result.conflicts).toEqual([
+      { field: 'title', winner: 'remote', discarded: 'Renamed offline', localAt: T1, remoteAt: T3 },
+    ]);
+  });
+
+  it('keeps a rename made after an offline delete arrived', () => {
+    const result = mergeRow({
+      local: baseRow({ title: 'Renamed offline', sync_state: 'pending' }),
+      remote: baseRow({ deleted_at: T2 }),
+      localMeta: { title: T3 },
+      remoteMeta: { deleted_at: T2 },
+      localUpdatedAt: T3,
+      remoteUpdatedAt: T2,
+      localUnsynced: true,
+    });
+    // Still deleted — the tombstone is the newer information about *the row* —
+    // and the later rename survives on it instead of being overwritten by the
+    // stale title the deleting device sent along.
+    expect(result.merged.deleted_at).toBe(T2);
+    expect(result.merged.title).toBe('Renamed offline');
+    expect(result.conflicts).toEqual([]);
+  });
+});
+
+describe('describeConflicts', () => {
+  it('says nothing for an empty list', () => {
+    expect(describeConflicts([])).toBeNull();
+  });
+
+  it('names the field and who kept it', () => {
+    const summary = describeConflicts([
+      { field: 'title', winner: 'remote', discarded: 'mine', localAt: T1, remoteAt: T3 },
+    ]);
+    expect(summary).toBe(
+      'Conflicting edit merged: kept the newer title from another device.',
+    );
+  });
+
+  it('reads as a sentence for several fields on both sides', () => {
+    const summary = describeConflicts([
+      { field: 'notes', winner: 'local', discarded: 'theirs', localAt: T3, remoteAt: T1 },
+      { field: 'due_at', winner: 'remote', discarded: 'mine', localAt: T1, remoteAt: T3 },
+      { field: 'title', winner: 'remote', discarded: 'mine', localAt: T1, remoteAt: T2 },
+    ]);
+    expect(summary).toBe(
+      'Conflicting edit merged: kept the newer due date and title from another device; kept your notes.',
+    );
   });
 });
 

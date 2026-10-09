@@ -426,15 +426,23 @@ is `services/ai/authHeaders.ts` (pure, unit-tested) and `services/ai/session.ts`
 `services/sync/engine.ts`
 
 ```
-push   pending rows (sync_state='pending') → upsert to Postgres → mark 'synced'
-push   drain sync_outbox  → non-row ops (set_task_tags), retry with attempts
 pull   SELECT * WHERE updated_at > sync.last_pull_at  (500/page, per table)
-merge  tasks: field by field, newest *field* write wins
+merge  tasks: field by field, newest *field* write wins; a collision that
+        discards an unshared local write is recorded in the activity log
         other tables: row-level last-write-wins, pending local copy protected
 insert rows this device has never seen
+push   pending rows (sync_state='pending') → upsert to Postgres → mark 'synced'
+push   drain sync_outbox  → non-row ops (set_task_tags), retry with attempts
 ```
 
-Four properties make this safe:
+**Pull runs before push** on purpose. A push is a whole-row upsert, so pushing
+first would send this device's stale copy of every column and overwrite whatever
+the other device changed since the last pull — the field-level merge would never
+get to see it. Merging first means the row that goes up already contains their
+newer fields. The row keeps `sync_state = 'pending'` when it arrived holding an
+unshared local write, so the push below still carries our half of the merge.
+
+Five properties make this safe:
 
 1. **Client-generated ids** — an offline create never needs a server round-trip
    to become addressable.
@@ -443,6 +451,11 @@ Four properties make this safe:
 3. **Pending local work is never discarded** — a local row still waiting to push
    is never overwritten by an older remote copy.
 4. **Per-field merges** — see below.
+5. **A discarded write is never silent** — when a merge throws away a local write
+   that had not been shared yet, `conflict_resolved` is written to the local
+   `activity_logs`, so the task's own feed says which field lost and which value
+   was kept instead. A remote edit to a field this device never touched is
+   collaboration, not a conflict, and stays out of the feed.
 
 ### Per-field merge (tasks)
 
@@ -466,9 +479,25 @@ carry a small JSON map of stamps, `tasks.field_meta` (schema v3):
   rows written before schema v3 degrade exactly to the old behaviour rather
   than to something new.
 
+Two consequences worth spelling out, because both used to be bugs:
+
+- **An explicit stamp outranks a row-level fallback.** Otherwise a newer
+  `updated_at` from an unrelated edit — most dramatically a delete — would drag
+  every unstamped field along with it and quietly drop a write that had its own
+  timestamp. `tests/merge.test.ts` pins the tombstone case in both directions.
+- **`pull → merge → push` is the order, never push first.** The push is a
+  whole-row upsert, so pushing first would re-send this device's stale copy of
+  every column over whatever the other device had changed. Merging first means
+  the row that goes up already contains their newer fields, and a row that still
+  owes the server an unshared local write stays `pending` so our half of the
+  merge reaches the server too.
+
 The rule and its helpers live in
 [`src/services/sync/merge.ts`](src/services/sync/merge.ts) — pure, no SQLite and
-no Supabase — and are pinned by `tests/merge.test.ts`.
+no Supabase — and are pinned by `tests/merge.test.ts`. The engine around them,
+including what a push actually contained and whether the conflict note landed,
+is driven end to end by `tests/sync-engine.test.ts` against a throwaway SQLite
+database and a fake backend.
 
 `field_meta` is part of the row that is pushed and pulled verbatim (both sides
 `SELECT *`), so Postgres needs the mirrored column from

@@ -1,9 +1,16 @@
 import { getDatabase } from '@/db/client';
+import { logActivity } from '@/db/repositories/activity';
 import type { EntityKind } from '@/domain/types';
 import { createId, nowIso } from '@/utils/id';
 
 import { getCurrentUserId, getSupabase, isSupabaseConfigured } from '../supabase/client';
-import { mergeFieldMeta, mergeRow, parseFieldMeta } from './merge';
+import {
+  describeConflicts,
+  mergeFieldMeta,
+  mergeRow,
+  parseFieldMeta,
+  type FieldConflict,
+} from './merge';
 
 /**
  * Offline-first sync engine.
@@ -22,6 +29,13 @@ import { mergeFieldMeta, mergeRow, parseFieldMeta } from './merge';
  *   editing different fields of the same task therefore keep both edits; the
  *   older whole-row rule is gone. Rows written before the stamps existed fall
  *   back to `updated_at` per field, which is exactly the old behaviour.
+ * - A pull that discards a local write that had not been shared yet is recorded
+ *   in `activity_logs`, so a merge never silently eats something the user typed.
+ * - **Pull runs before push.** A push is a whole-row upsert, so pushing first
+ *   would send this device's stale copy of every column and overwrite whatever
+ *   the other device changed since our last pull — the field-level merge would
+ *   never get to see it. Merging first means the row that goes up already
+ *   contains their newer fields.
  *
  * With no Supabase credentials, every entry point is a cheap no-op.
  */
@@ -242,6 +256,9 @@ async function pullDeltas(): Promise<{ pulled: number; errors: string[] }> {
         remoteMeta,
         localUpdatedAt: (local.updated_at as string) ?? remoteUpdatedAt,
         remoteUpdatedAt,
+        // Only a write this device has not managed to share yet can be *lost*
+        // by the merge — that is the case worth telling the user about.
+        localUnsynced: local.sync_state === 'pending',
       });
 
       if (result.tookRemote.length === 0) {
@@ -254,11 +271,17 @@ async function pullDeltas(): Promise<{ pulled: number; errors: string[] }> {
       const mergedMeta = mergeFieldMeta(localMeta, remoteMeta);
       const assignments = result.tookRemote.map((field) => `${field} = ?`);
       const values = result.tookRemote.map((field) => toSqliteValue(result.merged[field]));
+      // A row that arrived here holding an unshared local write is *still*
+      // owing the server that write. Marking it synced would quietly drop it
+      // from the push below — which is exactly how a pull-first sync loses the
+      // other half of a concurrent edit.
+      const nextState = local.sync_state === 'pending' ? 'pending' : 'synced';
       await db.runAsync(
-        `UPDATE tasks SET ${assignments.join(', ')}, field_meta = ?, sync_state = 'synced'
+        `UPDATE tasks SET ${assignments.join(', ')}, field_meta = ?, sync_state = ?
          WHERE id = ?`,
-        [...values, JSON.stringify(mergedMeta), id],
+        [...values, JSON.stringify(mergedMeta), nextState, id],
       );
+      await recordConflict(result.conflicts, id);
       pulled += 1;
       if (remoteUpdatedAt > highWater) highWater = remoteUpdatedAt;
     }
@@ -266,6 +289,31 @@ async function pullDeltas(): Promise<{ pulled: number; errors: string[] }> {
 
   if (highWater !== since) await setLastPulledAt(highWater);
   return { pulled, errors };
+}
+
+/**
+ * Writes a same-field collision into the local activity feed.
+ *
+ * `activity_logs` is device-local (it is not in SYNC_TABLES), so this is the
+ * record the person holding this phone sees: which of their fields lost, and
+ * which value the merge kept instead. Best-effort by design — a failed note
+ * must never abort a pull that has already written the merged row.
+ */
+async function recordConflict(conflicts: FieldConflict[], taskId: string): Promise<void> {
+  const summary = describeConflicts(conflicts);
+  if (!summary) return;
+  try {
+    const actorId = (await getCurrentUserId()) ?? undefined;
+    await logActivity({
+      entityKind: 'task',
+      entityId: taskId,
+      action: 'conflict_resolved',
+      summary,
+      actorId,
+    });
+  } catch {
+    // The merge itself succeeded; the note is a courtesy.
+  }
 }
 
 /** SQLite only stores strings, numbers and nulls — flatten everything else. */
@@ -295,10 +343,13 @@ export async function runSync(): Promise<SyncSummary> {
   const errors: string[] = [];
   try {
     await prunePoisonedOutbox();
+    // Merging before pushing is what keeps a concurrent edit alive: see the
+    // module comment — a whole-row upsert would otherwise overwrite fields this
+    // device has not seen yet with the stale values it is still holding.
+    const pull = await pullDeltas();
     const push = await pushPendingRows();
     const outbox = await drainOutbox();
-    const pull = await pullDeltas();
-    errors.push(...push.errors, ...outbox.errors, ...pull.errors);
+    errors.push(...pull.errors, ...push.errors, ...outbox.errors);
 
     return {
       pushed: push.pushed + outbox.drained,

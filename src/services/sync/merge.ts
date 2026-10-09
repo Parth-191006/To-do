@@ -112,6 +112,27 @@ export interface MergeInput {
   /** Row-level timestamps, used when a field carries no stamp. */
   localUpdatedAt: string;
   remoteUpdatedAt: string;
+  /**
+   * Does the local row hold a write that has not reached the server yet?
+   *
+   * Only then can a merge *discard* something of ours: if our change was
+   * already pushed, the other device edited a field we had finished with and
+   * the newer value simply wins. Reporting every remote write as a conflict
+   * would fill the activity feed with noise and drown the one entry that means
+   * "something you typed never made it".
+   */
+  localUnsynced?: boolean;
+}
+
+/** A field two devices wrote independently, where one value had to lose. */
+export interface FieldConflict {
+  field: string;
+  /** Which side's value survived the merge. */
+  winner: 'local' | 'remote';
+  /** The value that did not survive. */
+  discarded: unknown;
+  localAt: string;
+  remoteAt: string;
 }
 
 export interface MergeResult {
@@ -121,6 +142,8 @@ export interface MergeResult {
   keptLocal: string[];
   /** Fields where the remote value won (must be written back). */
   tookRemote: string[];
+  /** Same-field collisions worth telling the user about. */
+  conflicts: FieldConflict[];
 }
 
 /**
@@ -134,6 +157,7 @@ export function mergeRow(input: MergeInput): MergeResult {
   const merged: Record<string, unknown> = {};
   const keptLocal: string[] = [];
   const tookRemote: string[] = [];
+  const conflicts: FieldConflict[] = [];
 
   for (const field of MERGEABLE_TASK_FIELDS) {
     const localAt = localMeta[field] ?? localUpdatedAt;
@@ -148,11 +172,44 @@ export function mergeRow(input: MergeInput): MergeResult {
       continue;
     }
 
-    if (remoteAt >= localAt) {
+    // Which side wrote *this* field more recently?
+    //
+    //   both stamped   → the stamps decide (equal stamps are the same write)
+    //   remote stamped → remote. An explicit field write outranks a row-level
+    //                    fallback; otherwise a newer `updated_at` from an
+    //                    unrelated edit (or a delete) would silently drop it.
+    //   otherwise      → fall back to the row timestamps, which is exactly the
+    //                    pre-stamp behaviour rows written before v3 rely on.
+    const localStamp = localMeta[field];
+    const remoteStamp = remoteMeta[field];
+    const remoteWins = remoteStamp
+      ? localStamp
+        ? remoteStamp >= localStamp
+        : true
+      : remoteAt >= localAt;
+
+    // Is something of ours about to be thrown away? Only a field *this device
+    // explicitly stamped* while the row is still unsynced counts: that is a
+    // write the user made and the server has not seen. It can lose even without
+    // a stamp on the other side — a whole-row write elsewhere (a delete, say)
+    // moves that row's `updated_at`, and every unstamped field falls back to it.
+    const ourUnsharedWrite = Boolean(input.localUnsynced && localStamp);
+    const valuesDiffer = localHas && remoteHas && !sameValue(local[field], remote[field]);
+
+    if (remoteWins) {
       // Remote is at least as new for this field.
-      if (remoteHas && (!localHas || !sameValue(local[field], remote[field]))) {
+      if (remoteHas && (!localHas || valuesDiffer)) {
         merged[field] = remote[field];
         tookRemote.push(field);
+        if (ourUnsharedWrite) {
+          conflicts.push({
+            field,
+            winner: 'remote',
+            discarded: local[field],
+            localAt,
+            remoteAt,
+          });
+        }
       } else if (localHas) {
         merged[field] = local[field];
         keptLocal.push(field);
@@ -163,9 +220,68 @@ export function mergeRow(input: MergeInput): MergeResult {
     // Local write is strictly newer for this field — never clobber it.
     if (localHas) merged[field] = local[field];
     keptLocal.push(field);
+    // The mirror image: we kept our value and the other device's was dropped.
+    // That is only worth a note when *they* explicitly wrote the field too,
+    // otherwise it is just our ordinary edit winning against a stale row.
+    if (ourUnsharedWrite && valuesDiffer && remoteMeta[field]) {
+      conflicts.push({
+        field,
+        winner: 'local',
+        discarded: remote[field],
+        localAt,
+        remoteAt,
+      });
+    }
   }
 
-  return { merged, keptLocal, tookRemote };
+  return { merged, keptLocal, tookRemote, conflicts };
+}
+
+/** Human labels for the columns, so an activity entry reads like a sentence. */
+const FIELD_LABELS: Record<string, string> = {
+  project_id: 'list',
+  parent_id: 'parent task',
+  title: 'title',
+  notes: 'notes',
+  status: 'status',
+  priority: 'priority',
+  due_at: 'due date',
+  remind_at: 'reminder',
+  recurrence: 'recurrence',
+  location_reminder: 'place reminder',
+  estimate_minutes: 'estimate',
+  attachments: 'attachments',
+  position: 'order',
+  completed_at: 'completion',
+  deleted_at: 'deletion',
+};
+
+/** `['title', 'due_at']` → `"title and due date"`. */
+export function describeFields(fields: string[]): string {
+  const labels = fields.map((field) => FIELD_LABELS[field] ?? field);
+  if (labels.length <= 1) return labels[0] ?? '';
+  return `${labels.slice(0, -1).join(', ')} and ${labels[labels.length - 1]}`;
+}
+
+/**
+ * One sentence for the activity feed, or null when there is nothing to say.
+ *
+ * Both directions are worth recording: a lost local write is the case the user
+ * needs to know about, and a kept one means a collaborator's change was
+ * superseded by a newer edit of ours.
+ */
+export function describeConflicts(conflicts: FieldConflict[]): string | null {
+  if (conflicts.length === 0) return null;
+  const remoteWon = conflicts.filter((c) => c.winner === 'remote').map((c) => c.field);
+  const localWon = conflicts.filter((c) => c.winner === 'local').map((c) => c.field);
+  const parts: string[] = [];
+  if (remoteWon.length > 0) {
+    parts.push(`kept the newer ${describeFields(remoteWon)} from another device`);
+  }
+  if (localWon.length > 0) {
+    parts.push(`kept your ${describeFields(localWon)}`);
+  }
+  return `Conflicting edit merged: ${parts.join('; ')}.`;
 }
 
 /**
