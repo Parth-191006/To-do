@@ -384,7 +384,11 @@ audit that drove this release is in **[docs/AUDIT.md](docs/AUDIT.md)**.
 Release APKs are built entirely by GitHub Actions — no local Android SDK
 required. Every run of [`android-apk.yml`](.github/workflows/android-apk.yml):
 
-1. restores (or creates) the release keystore from a cached artifact,
+1. restores the release keystore from the base64 repository secret
+   `ANDROID_KEYSTORE_BASE64` (with the password, alias and key password), and
+   **fails the build with instructions** if any of the four are missing — it
+   never generates a keystore, because a key minted per run cannot install over
+   an existing app,
 2. runs `npm run verify`, `npx expo prebuild` and assembles a **signed
    arm64-v8a** release,
 3. verifies the signature and uploads `TaskFlow-apk-<run>` as a run artifact,
@@ -392,8 +396,35 @@ required. Every run of [`android-apk.yml`](.github/workflows/android-apk.yml):
    **`TaskFlow-latest.apk`** (stable permalink) and
    **`TaskFlow-v<version>-arm64-v8a.apk`**.
 
-Because the keystore persists between runs, release APKs share one signature:
-updates install over existing installs without losing local data.
+Because every release is signed with the same key, updates install over existing
+installs without losing local data.
+
+### App size
+
+The release build turns on the two size levers Expo exposes, in `app.json` via
+[`expo-build-properties`](https://docs.expo.dev/versions/v57.0.0/sdk/build-properties/)
+(`android.enableMinifyInReleaseBuilds` and
+`android.enableShrinkResourcesInReleaseBuilds`):
+
+| Lever | State | Effect |
+| --- | --- | --- |
+| Hermes | default, no config | Precompiled bytecode, no interpreter shipped. The `jsEngine` field was removed from the SDK 57 schema — Hermes is the only engine, so there is nothing to switch |
+| R8 / minify in release | **enabled** | Shrinks and obfuscates Java/Kotlin, strips unused code |
+| Resource shrinking | **enabled** | Removes Android resources no longer referenced |
+| `crunchPngs` | enabled by default | Repacks PNGs |
+| Bundle compression | **off** (default) | Would shrink the APK further but slow cold start; refused deliberately for a capture-first app |
+
+Measure it on a real build — the exported JS bundle is not the APK:
+
+```bash
+npx expo run:android --variant release     # local; needs an Android SDK
+# or, in the cloud:
+npx eas-cli build --profile preview --platform android
+```
+
+The exported bundle (`npx expo export --platform android`) is the fastest proxy
+for the JavaScript half: on this tree it is a single ~4.9 MB Hermes bytecode
+file.
 
 ### Install in 30 seconds
 
