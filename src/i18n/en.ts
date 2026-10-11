@@ -77,6 +77,36 @@ export const en = {
   'inbox.addTag': 'Add tag',
   'inbox.addTagA11y': 'Add the typed tag',
 
+  /* ---------------------------------------------------------------- Join */
+  'join.working': 'Opening your invite…',
+  'join.workingBody': 'Checking this link against the list it belongs to.',
+  'join.accepted': 'You joined the list',
+  'join.acceptedBody': 'Its tasks are on their way to this device — taking you there now.',
+  'join.signedOutTitle': 'Sign in to accept',
+  'join.signedOutBody':
+    'This invite is saved on this phone. Sign in under Settings › Sync with the email it was sent to, and it will be accepted automatically — you will not need the link again.',
+  'join.signedOutHow':
+    'Settings › Sync sends a sign-in link to your email. Open it on this device, then come back here.',
+  'join.goSignIn': 'Open Sync settings',
+  'join.goSignInA11y': 'Open the Settings screen to sign in',
+  'join.parkedMicro':
+    'THE INVITE STAYS SAVED UNTIL YOU SIGN IN OR TAP CANCEL — NOTHING ON THE LIST CHANGES UNTIL THEN.',
+  'join.failedTitle': 'This invite cannot be used',
+  'join.failNotFound':
+    'No invite matches this link. Ask for a new one — links are single-use, so an old email may already have been opened.',
+  'join.failExpired': 'This invite has expired. Ask the list owner to send a fresh one.',
+  'join.failUsed':
+    'This invite has already been accepted. If that was you, the list is in your app — open TaskFlow normally.',
+  'join.failWrongEmail':
+    'This invite was sent to a different email address. Sign in with that address under Settings › Sync, then open the link again.',
+  'join.failUnknown': 'Something went wrong accepting this invite. Try again in a moment.',
+  'join.failNotConfigured':
+    'This build of TaskFlow has no cloud backend, so list invites do not work here. The app itself works fully offline.',
+  'join.backToApp': 'Back to TaskFlow',
+  'join.backToAppA11y': 'Return to the main screen',
+  'join.openSettings': 'Open Settings › Sync',
+  'join.openSettingsA11y': 'Open the Settings screen',
+
   /* --------------------------------------------------------------- Focus */
   'focus.subtitle': 'Pomodoro blocks linked to the task you are working on.',
 
@@ -183,6 +213,25 @@ export const en = {
     'EXPORTS CARRY EVERY TASK, LIST, TAG AND HABIT (JSON) OR ONE ROW PER TASK (CSV). CLEARING LOCAL DATA WRITES A BACKUP FIRST, SO IT CAN BE UNDONE.',
   'settings.chipReset': 'Reset local data',
   'settings.chipResetA11y': 'Clear all local data',
+
+  /* diagnostics */
+  'settings.sectionDiagnostics': 'Diagnostics',
+  'settings.crashLogLabel': 'Keep a local crash log',
+  'settings.crashLogCaption':
+    'Off by default. When on, uncaught errors are recorded on this device — message, stack trace, app version and platform, with email addresses and long token-like strings removed. Nothing is ever uploaded: there is no server to send it to. Use the chips below to read, share or clear what has been logged. Turning this off stops new entries; it does not delete existing ones.',
+  'settings.rowCrashEntries': 'Crash entries stored',
+  'settings.chipViewCrashLog': 'View log',
+  'settings.chipViewCrashLogA11y': 'Show the crash reports recorded on this device',
+  'settings.chipShareCrashLog': 'Share log',
+  'settings.chipShareCrashLogA11y': 'Share the crash reports through another app',
+  'settings.chipClearCrashLog': 'Clear log',
+  'settings.chipClearCrashLogA11y': 'Delete the crash reports stored on this device',
+  'settings.crashLogEmpty': 'Nothing has been logged yet.',
+  'settings.crashLogCleared': 'Crash log cleared.',
+  'settings.crashLogShared': 'Pick where to send the crash log.',
+  'settings.crashLogShareFailed': 'Could not open a share destination on this device.',
+  'settings.crashLogMicro':
+    'THE LOG LIVES IN THIS APP\'S PRIVATE STORAGE AND LEAVES ONLY WHEN YOU TAP “SHARE LOG”. IT CONTAINS NO TASK TEXT, NO NOTES AND NO ACCOUNT DETAILS.',
 
   /* experimental */
   'settings.sectionExperimental': 'Experimental',

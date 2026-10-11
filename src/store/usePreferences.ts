@@ -24,6 +24,7 @@ const TEMPLATES_KEY = 'taskflow.capture.templates';
 const LAST_TASK_KEY = 'taskflow.capture.lastTask';
 const REVIEW_KEY = 'taskflow.review.lastDismissed';
 const EXPERIMENTAL_KEY = 'taskflow.experimental.features';
+const CRASH_LOG_KEY = 'taskflow.diagnostics.crashLog';
 
 /** A deliberate tap always wins over a slow hydration read. */
 let userTouched = false;
@@ -111,6 +112,18 @@ interface PreferencesState {
    */
   experimental: boolean;
   setExperimental: (next: boolean) => void;
+
+  /**
+   * Capture uncaught JS errors into a local, scrubbed crash log.
+   *
+   * Off by default, and nothing is ever uploaded: there is no endpoint, so
+   * the log is kept on this device and shared only when the user chooses a
+   * destination from Settings → Diagnostics. Turning this off stops capture; it
+   * does not delete what was already logged (that is a separate, explicit
+   * action).
+   */
+  crashLogEnabled: boolean;
+  setCrashLogEnabled: (next: boolean) => void;
 }
 
 /** A saved capture line, replayed through the same parser as typed input. */
@@ -256,6 +269,13 @@ export const usePreferences = create<PreferencesState>((set) => ({
     set({ experimental: next });
     persist(EXPERIMENTAL_KEY, next ? 'true' : 'false');
   },
+
+  crashLogEnabled: false,
+  setCrashLogEnabled: (next) => {
+    userTouched = true;
+    set({ crashLogEnabled: next });
+    persist(CRASH_LOG_KEY, next ? 'true' : 'false');
+  },
 }));
 
 /**
@@ -278,6 +298,7 @@ Promise.all([
   AsyncStorage.getItem(LAST_TASK_KEY),
   AsyncStorage.getItem(REVIEW_KEY),
   AsyncStorage.getItem(EXPERIMENTAL_KEY),
+  AsyncStorage.getItem(CRASH_LOG_KEY),
 ])
   .then(([
     autoStart,
@@ -295,6 +316,7 @@ Promise.all([
     lastTask,
     review,
     experimental,
+    crashLog,
   ]) => {
     if (userTouched) return;
     const patch: Partial<PreferencesState> = {};
@@ -327,6 +349,9 @@ Promise.all([
     if (review) patch.lastReviewDismissed = review;
     if (experimental === 'true' || experimental === 'false') {
       patch.experimental = experimental === 'true';
+    }
+    if (crashLog === 'true' || crashLog === 'false') {
+      patch.crashLogEnabled = crashLog === 'true';
     }
     usePreferences.setState({ ...patch, hydrated: true });
   })

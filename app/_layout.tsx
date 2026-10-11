@@ -20,7 +20,14 @@ import {
   type NotificationOutcome,
 } from '@/services/notifications';
 import { runWeeklyBackupIfDue } from '@/services/data/weeklyBackup';
-import { completeSignInFromUrl, isSupabaseConfigured } from '@/services/supabase/client';
+import { installCrashLog } from '@/services/crashLog';
+import {
+  completeSignInFromUrl,
+  getSessionEmail,
+  isSupabaseConfigured,
+  subscribeToAuthChanges,
+} from '@/services/supabase/client';
+import { acceptListInvite, drainPendingInvite } from '@/services/supabase/invites';
 import { usePreferences } from '@/store/usePreferences';
 import { useStore } from '@/store/useStore';
 import { ThemeProvider, useTheme } from '@/theme/ThemeProvider';
@@ -39,6 +46,14 @@ export default function RootLayout() {
     void configureNotifications();
     void bootstrap();
   }, [bootstrap]);
+
+  // The crash log installs its global handler regardless of the toggle (the
+  // handler cannot be swapped later once errors are flying); the preference is
+  // read at capture time, so "off by default" means nothing is stored until
+  // the user opts in under Settings → Diagnostics.
+  useEffect(() => {
+    installCrashLog();
+  }, []);
 
   // The Do Not Disturb choice has to reach the notification layer before
   // anything is scheduled. The preference is restored from disk asynchronously,
@@ -119,6 +134,34 @@ export default function RootLayout() {
     return () => subscription.remove();
   }, [refresh]);
 
+  // A parked invite is the half of the join flow that survives signing in.
+  // The invite link arrives before the invitee has an account, so /join/[token]
+  // stores the token and sends them to Settings › Sync; the moment a session
+  // exists — however it was established — this drains the token and joins the
+  // list, so the person never has to find the email again. Subscribed to auth
+  // changes rather than run once, because the session usually appears *after*
+  // mount, via the magic-link redirect consumed above.
+  useEffect(() => {
+    if (!isSupabaseConfigured) return;
+    let cancelled = false;
+    const tryPending = async () => {
+      const email = await getSessionEmail().catch(() => null);
+      if (!email || cancelled) return;
+      const token = await drainPendingInvite();
+      if (!token || cancelled) return;
+      const result = await acceptListInvite(token);
+      if (result.ok && !cancelled) {
+        await refresh();
+        setLastOutcome('Invite accepted — the shared list is now yours');
+        setTimeout(() => router.push(`/project/${result.projectId}` as never), 240);
+      }
+    };
+    void tryPending();
+    return subscribeToAuthChanges(() => {
+      void tryPending();
+    });
+  }, [refresh, router, setLastOutcome]);
+
   useEffect(() => {
     if (status === 'ready' || status === 'error') {
       void SplashScreen.hideAsync().catch(() => undefined);
@@ -171,6 +214,8 @@ function ThemedShell({
           <Stack.Screen name="(tabs)" />
           <Stack.Screen name="task/[id]" options={{ presentation: 'card' }} />
           <Stack.Screen name="project/[id]" />
+          <Stack.Screen name="join/[token]" options={{ presentation: 'card' }} />
+          <Stack.Screen name="add" options={{ presentation: 'modal' }} />
           <Stack.Screen name="settings" options={{ presentation: 'modal' }} />
         </Stack>
       </AppLock>

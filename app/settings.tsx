@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Linking, Pressable, ScrollView, StyleSheet, Switch, TextInput, View } from 'react-native';
+import { Linking, Pressable, ScrollView, Share, StyleSheet, Switch, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BrandMark } from '@/components/BrandMark';
@@ -22,6 +22,8 @@ import {
   type ImportPlan,
 } from '@/services/data/export';
 import { runWeeklyBackupNow } from '@/services/data/weeklyBackup';
+import { clearCrashReports, getCrashReports } from '@/services/crashLog';
+import { formatCrashReports, type CrashReport } from '@/domain/crashLog';
 import * as FileSystem from 'expo-file-system/legacy';
 import {
   applyDndBypassPreference,
@@ -76,6 +78,8 @@ export default function SettingsScreen() {
   const weeklyGoalTasks = usePreferences((state) => state.weeklyGoalTasks);
   const experimental = usePreferences((state) => state.experimental);
   const setExperimental = usePreferences((state) => state.setExperimental);
+  const crashLogEnabled = usePreferences((state) => state.crashLogEnabled);
+  const setCrashLogEnabled = usePreferences((state) => state.setCrashLogEnabled);
 
   const [backup, setBackup] = useState<{ exists: boolean; modifiedAt?: number }>({ exists: false });
   const [importOpen, setImportOpen] = useState(false);
@@ -93,6 +97,37 @@ export default function SettingsScreen() {
   const [sessionEmail, setSessionEmail] = useState<string | null>(null);
   const [signInEmail, setSignInEmail] = useState('');
   const [linkSent, setLinkSent] = useState(false);
+
+  /** Crash log: the count drives the row, the sheet shows the entries. */
+  const [crashReports, setCrashReports] = useState<CrashReport[]>([]);
+  const [crashOpen, setCrashOpen] = useState(false);
+
+  const refreshCrashReports = useCallback(async () => {
+    setCrashReports(await getCrashReports().catch(() => []));
+  }, []);
+
+  useEffect(() => {
+    void refreshCrashReports();
+  }, [refreshCrashReports]);
+
+  const handleShareCrashLog = useCallback(async () => {
+    if (crashReports.length === 0) {
+      setDataNote(t('settings.crashLogEmpty'));
+      return;
+    }
+    try {
+      await Share.share({ message: formatCrashReports(crashReports) });
+      setDataNote(t('settings.crashLogShared'));
+    } catch {
+      setDataNote(t('settings.crashLogShareFailed'));
+    }
+  }, [crashReports]);
+
+  const handleClearCrashLog = useCallback(async () => {
+    await clearCrashReports();
+    await refreshCrashReports();
+    setDataNote(t('settings.crashLogCleared'));
+  }, [refreshCrashReports]);
 
   /** Tasks that still have a future reminder or due time waiting on the OS. */
   const armed = useMemo(
@@ -578,6 +613,51 @@ export default function SettingsScreen() {
           />
         </Section>
 
+        <Section title={t('settings.sectionDiagnostics')} icon="pulse-outline">
+          <ToggleRow
+            label={t('settings.crashLogLabel')}
+            caption={t('settings.crashLogCaption')}
+            value={crashLogEnabled}
+            onChange={setCrashLogEnabled}
+          />
+          <Row
+            label={t('settings.rowCrashEntries')}
+            value={`${crashReports.length}`}
+          />
+          <View style={{ flexDirection: 'row', gap: theme.spacing.sm, flexWrap: 'wrap' }}>
+            <Chip
+              label={t('settings.chipViewCrashLog')}
+              icon="document-text-outline"
+              accessibilityLabel={t('settings.chipViewCrashLogA11y')}
+              onPress={() => {
+                void refreshCrashReports();
+                setCrashOpen(true);
+              }}
+            />
+            <Chip
+              label={t('settings.chipShareCrashLog')}
+              icon="share-outline"
+              accessibilityLabel={t('settings.chipShareCrashLogA11y')}
+              onPress={() => void handleShareCrashLog()}
+            />
+            <Chip
+              label={t('settings.chipClearCrashLog')}
+              icon="trash-outline"
+              color={theme.colors.danger}
+              accessibilityLabel={t('settings.chipClearCrashLogA11y')}
+              onPress={() => void handleClearCrashLog()}
+            />
+          </View>
+          {dataNote ? (
+            <Text variant="caption" color={theme.colors.accent}>
+              {dataNote}
+            </Text>
+          ) : null}
+          <Text variant="micro" color={theme.colors.textTertiary}>
+            {t('settings.crashLogMicro')}
+          </Text>
+        </Section>
+
         <Section title={t('settings.sectionData')} icon="server-outline">
           <Row label={t('settings.rowProjects')} value={`${projects.length}`} />
           <Row label={t('settings.rowTasks')} value={`${tasks.length}`} />
@@ -728,6 +808,61 @@ export default function SettingsScreen() {
         Import is a paste box rather than a file picker: the JSON export is
         plain text, and this keeps the flow offline and dependency-free.
       */}
+      <BottomSheet
+        visible={crashOpen}
+        onClose={() => setCrashOpen(false)}
+        title={t('settings.sectionDiagnostics')}
+        subtitle={t('settings.crashLogMicro')}
+        heightRatio={0.7}
+      >
+        <ScrollView
+          style={{ maxHeight: 360 }}
+          contentContainerStyle={{ gap: theme.spacing.md, paddingTop: theme.spacing.lg }}
+        >
+          {crashReports.length === 0 ? (
+            <Text variant="caption" color={theme.colors.textSecondary}>
+              {t('settings.crashLogEmpty')}
+            </Text>
+          ) : (
+            crashReports.map((report) => (
+              <View
+                key={`${report.fingerprint}-${report.at}`}
+                style={{
+                  gap: 4,
+                  padding: theme.spacing.md,
+                  borderRadius: theme.radii.md,
+                  backgroundColor: theme.colors.surfaceSunken,
+                }}
+              >
+                <Text variant="caption" color={theme.colors.textPrimary}>
+                  {report.message}
+                </Text>
+                <Text variant="micro" color={theme.colors.textTertiary}>
+                  {`${report.severity.toUpperCase()} · v${report.appVersion} · ${report.platform} · ${report.at}`}
+                </Text>
+                {report.stack ? (
+                  <Text variant="micro" color={theme.colors.textTertiary}>
+                    {report.stack.split('\n').slice(0, 4).join('\n')}
+                  </Text>
+                ) : null}
+              </View>
+            ))
+          )}
+        </ScrollView>
+        <View style={{ flexDirection: 'row', gap: theme.spacing.sm, paddingTop: theme.spacing.md }}>
+          <Chip
+            label={t('settings.chipShareCrashLog')}
+            icon="share-outline"
+            accessibilityLabel={t('settings.chipShareCrashLogA11y')}
+            onPress={() => void handleShareCrashLog()}
+          />
+          <Chip
+            label={t('common.cancel')}
+            onPress={() => setCrashOpen(false)}
+          />
+        </View>
+      </BottomSheet>
+
       <BottomSheet
         visible={importOpen}
         onClose={() => setImportOpen(false)}
