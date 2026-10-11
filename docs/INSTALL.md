@@ -38,8 +38,12 @@ No release exists yet? Build one yourself — see
 1. Open **https://github.com/Parth-191006/To-do/actions**
 2. In the left sidebar, select **Android APK**
 3. Click **Run workflow →** (keep branch as `main`) → **Run workflow**
-4. Wait ~15–20 min. Click the running build to watch the live log.
-5. When it finishes, download the **TaskFlow-apk-\<number\>** artifact from
+4. If it stops in the first seconds with *Signing secrets missing*, the four
+   secrets are not set yet — the build never starts without them, on purpose.
+   Follow [Create the release keystore](#create-the-release-keystore-once), then
+   run it again.
+5. Otherwise wait ~15–20 min. Click the running build to watch the live log.
+6. When it finishes, download the **TaskFlow-apk-\<number\>** artifact from
    the run's Artifacts section and unzip it — inside are the installable APKs.
    (Tagging a `v*` commit instead attaches them to a Release automatically.)
 
@@ -48,19 +52,21 @@ Google Drive / Telegram / WhatsApp "message to self", or copy it over USB.
 
 ### Updating later
 
-Every build is signed with the **same** key: it is minted once, kept in the
-Actions cache, and refreshed on every push to `main`. A newer APK therefore
-installs straight over the old one and your tasks and habits are preserved —
-just download and tap again, with nothing to uninstall.
+Every build signed with the key held in this repository's secrets installs
+straight over the last one and your tasks and habits are preserved — download and
+tap again, with nothing to uninstall. The workflow refuses to build until those
+secrets exist ([Create the release keystore](#create-the-release-keystore-once)),
+because a key minted on a runner cannot update an app that is already installed.
 
-The one exception is an install from a build made **before the CI keystore was
-pinned** (v1.1.0 or earlier). That signature cannot be reproduced, so uninstall
-it once and install the current release. Data lives on the device, so
-uninstalling clears tasks and habits — install v1.1.1 or later and this never
-comes up again.
+The exception is an APK signed with a key this workflow no longer uses: builds up
+to **v1.2.3** (the retired CI-minted key, or a keystore held under the old
+`KEYSTORE_*` secret names) and **v1.1.0 or earlier**. Android treats a signature
+change as a different app, so uninstall that build once before installing the
+current release — **Settings → Data → Export** first, since uninstalling clears
+local data.
 
 Prefer an identity that can never lapse? Pin your own key — see
-[Release with your own keystore](#release-with-your-own-keystore).
+[Create the release keystore](#create-the-release-keystore-once).
 
 ### Troubleshooting
 
