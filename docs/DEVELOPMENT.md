@@ -59,6 +59,15 @@ uses, so a regression fails here before it reaches a phone:
   in the tabs and settings resolves to a real key.
 - **Notification channels** — the Do Not Disturb mapping, which cannot be
   changed after a channel is created.
+- **Invites** — token parsing strictness (only `/join/<hex>`, final path
+  segment), the round-trip helpers, and both states of the invite email: one with
+  a link and one that admits there is none.
+- **Crash log** — the scrubbing rules themselves (emails, token-like runs, long
+  digit strings), fingerprint dedupe, the queue cap, and that a thrown non-Error
+  produces a report instead of a second failure.
+- **Cross-view parity** — each task view receives a required completion callback
+  and labels it for a screen reader, so the agenda and the matrix cannot quietly
+  go back to being read-only.
 - **Tour & task status** — the first-run copy and the status transitions.
 
 CI ([`ci.yml`](../.github/workflows/ci.yml)) runs typecheck, tests and the brand

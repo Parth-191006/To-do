@@ -186,9 +186,16 @@ app/
 │
 ├── task/[id].tsx            Task detail: subtasks, AI breakdown, edit sheet
 ├── project/[id].tsx         Project detail: progress, tasks, activity, sharing
+├── join/[token].tsx         `taskflow://join/<token>` — accepts a list invite
+├── add.tsx                  `taskflow://add?text=…` — confirm-then-create (modal)
 ├── settings.tsx             Appearance · notifications · sync · data (modal)
 └── +not-found.tsx
 ```
+
+The root layout also owns two non-visual lifecycles: the **crash log** installs
+its global handler once (the preference is read at capture time, so "off by
+default" really means nothing is stored), and a **parked invite** is drained the
+moment an auth session appears, so an invite opened before sign-in still lands.
 
 ### Navigation flow
 
@@ -365,7 +372,12 @@ user asked" is exactly the kind of claim that should be pinned.
 2. `TaskManager.defineTask(GEOFENCE_TASK, …)` is declared at module scope so the
    OS can invoke it after a cold start, with no React tree mounted.
 3. The headless task resolves the task id from the region identifier and posts
-   an immediate local notification ("You are at The Office").
+   an immediate local notification ("You are at The Office") on the `taskflow.place`
+   category — **Complete** / **Snooze 1h** / **Open** — routed through the same
+   `geofenceChannelId` (in `geofenceSync.ts`, beside the pure signature gate) as
+   timed reminders, so an urgent fenced task gets the heads-up channel and a DND
+   opt-in is honoured. Posting without a channel id put every place alert on
+   Android's own "Miscellaneous" channel, outside the set Settings describes.
 
 ---
 
@@ -513,6 +525,24 @@ With no Supabase credentials every entry point returns a cheap no-op summary,
 and the app is entirely functional. `pendingChangeCount()` feeds the "unsynced"
 badge in Settings.
 
+### List invites
+
+The invite token *is* the credential for joining someone else's list, so the
+client never mints one and never writes membership: migration 0006 adds
+`list_invites` plus `create_list_invite` / `accept_list_invite`, both
+`SECURITY DEFINER`. Creating checks the caller may edit the list; accepting
+checks expiry, single use and — when the invite named an address — that the
+claimed email matches, and reports which of those failed so the screen can be
+specific rather than showing "invalid link".
+
+The client half ([`src/services/supabase/invites.ts`](src/services/supabase/invites.ts))
+builds the `taskflow://join/<token>` link with `Linking.createURL` (the dev
+client gets its dev-server URL for free), parks a token that arrives before
+sign-in in `AsyncStorage`, and replays it after the magic-link redirect. Parsing
+lives in [`src/domain/invites.ts`](src/domain/invites.ts) — strict (`/join/<hex>,
+token as the final segment`) and pure, because a link is attacker-controlled
+input that must be rejected before it can reach an RPC.
+
 ---
 
 ## 9. Removing the freemium layer
@@ -583,9 +613,10 @@ runtime.
 
 **What stays on the device.** Everything, by default. Tasks, notes, subtasks,
 lists, tags, habits and their logs, focus sessions, voice notes, photo
-attachments, review and template preferences — all in one SQLite file. There is
-no telemetry, no crash reporter, no advertising SDK and no analytics module in
-the dependency tree.
+attachments, review, template and diagnostic preferences — all in one SQLite
+file. There is no telemetry, no advertising SDK, no analytics module and
+**nothing that uploads**: an opt-in crash *log* (Settings → Diagnostics, off by
+default) keeps scrubbed reports locally and has no endpoint to send them to.
 
 **What is synced.** Only when `EXPO_PUBLIC_SUPABASE_URL` and
 `EXPO_PUBLIC_SUPABASE_ANON_KEY` are set *and* the user signs in: task,

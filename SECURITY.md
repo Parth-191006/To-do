@@ -62,6 +62,8 @@ one of them is *ineffective* is exactly what we want.
 | Audio and model calls are proxied | The provider key exists only as a Supabase secret inside an Edge Function. |
 | Permissions are requested on first use, after an explanation | Denial degrades the feature quietly (a delayed alert, an unarmed geofence) instead of breaking the app. |
 | App lock is a privacy screen | It gates the UI with biometrics; it is not a claim that the on-device database is encrypted. |
+| List invites are minted and consumed **server-side** | The invite token is the credential for joining a list, so the client never builds one and never inserts membership. `create_list_invite` / `accept_list_invite` are `SECURITY DEFINER` functions that check edit rights on the way in, and expiry, single use and (when the invite named one) the invited address on the way out. A patched APK cannot skip a check that does not run on the device. |
+| A crash log is **opt-in, local, and scrubbed** | Off by default. When on, the capture path runs [`src/domain/crashLog.ts`](src/domain/crashLog.ts) over the message and stack *before* anything is stored, so what lands in `AsyncStorage` has already lost email addresses, token-like runs and 10+ digit strings. There is no uploader to add one to by accident. |
 
 ## `EXPO_PUBLIC_*` audit
 
@@ -79,6 +81,30 @@ The rule that follows from this: **no endpoint may be callable anonymously.**
 Both proxies answer 401 without a valid user token, and both keep a per-user,
 per-minute budget in Postgres rather than in memory, so a restart does not reset
 it and one user cannot spend another's.
+
+## Invite links, and why the token is the credential
+
+An invite link (`taskflow://join/<token>`) crosses untrusted channels by design —
+email, chat, a screenshot of a URL — so the token is treated as a bearer secret
+rather than an identifier:
+
+- **Minted server-side** (24 random bytes, lowercase hex) by a `SECURITY DEFINER`
+  function that first checks the caller may edit the list.
+- **Expiring and single-use.** `accept_list_invite` refuses a token that has been
+  consumed, has expired, or names a different email address than the one the
+  caller is signed in with, and reports *which* of those it is so the screen can
+  say so honestly instead of showing "invalid link".
+- **Parsed strictly on the client.** Only `/join/<16–128 hex chars>` is accepted,
+  with the token as the final path segment. Anything else — including a hostile
+  URL that merely contains a token-like substring — is rejected before a network
+  call is made ([`src/domain/invites.ts`](src/domain/invites.ts)).
+- **Not logged, not emailed back.** The token appears in the `mailto:` body the
+  user sends and in the parked-invite slot on the device, nowhere else.
+
+What an attacker who has a live link can do: join the list it names, as
+somebody with the invited address. That is the point of the link. What they
+*cannot* do is choose a different list, skip the expiry, reuse a consumed token,
+or accept one addressed to somebody else.
 
 ## Permissions the app declares
 
@@ -127,6 +153,13 @@ Reporting these is welcome, but they are known:
   and two-factor authentication is the mitigation.
 - App lock gates the UI only; the SQLite file on the device is not encrypted
   beyond whatever full-disk encryption the OS provides.
+- A crash log the user switches on is stored unencrypted, like everything else
+  in `AsyncStorage`. Scrubbing removes the categories that were identified as PII
+  carriers; it is a best effort over free-form text, not a guarantee that no
+  string in a stack trace could ever be meaningful.
+- Invite tokens are bearer credentials: whoever holds a live link can join that
+  list until it is used or expires. Single use and expiry are what bound the
+  window, and a list owner cannot un-see a link they already sent.
 - Notifications, geofences and exact alarms cannot be verified without physical
   hardware; the audits in [`docs/AUDIT.md`](docs/AUDIT.md) say so plainly where
   a behaviour is verified by inspection only.

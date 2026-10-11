@@ -10,11 +10,32 @@ Release APKs are published for every `v*` tag:
 ## [Unreleased]
 
 Release hardening: CI and signing, a security pass over every public variable,
-per-field sync, end-to-end tests and a documentation split. Nothing here changes
-the data format, so updates install over 1.2.3 without a migration.
+per-field sync, end-to-end tests and a documentation split — then list invites,
+an opt-in crash log, quick add by link and a parity pass over the four views. The
+local database gains no columns, so the app still updates over 1.2.3 without a
+local migration; the server side needs migration 0006.
 
 ### Added
 
+- **Invite people to a list by link.** *Share & invite* on a list mints a
+  single-use, expiring token (server-side, via migration 0006) and puts it in
+  both the email draft and a `taskflow://join/<token>` link. Opening the link
+  joins the list; opening it before signing in parks the invite and replays it
+  after sign-in; a dead token says whether it expired, was already used, or was
+  addressed to someone else. Without a backend the screen says sharing is not
+  configured instead of pretending.
+- **Quick add by link** — `taskflow://add?text=Submit%20report%20tomorrow%205pm`
+  parses the text, shows the title and its chips, and writes only after you tap
+  **Add task**. Any app that can open a URL can use it (bookmarklet, shortcut,
+  automation, bot).
+- **Opt-in crash log** — Settings → Diagnostics, **off by default**. Uncaught errors
+  are stored on this device after email addresses, token-like runs and long digit
+  strings are scrubbed out of the message and stack. Nothing is uploaded; the log
+  is viewable and shareable, and clearing it is a separate, explicit action.
+- **Complete a task from the Agenda or the Matrix** — the list's own checkbox,
+  with the same "Mark … complete" label, so all four views finish tasks in place.
+- A **camera primer** before the OS camera prompt, matching the mic and location
+  ones, so a denial is a choice rather than a surprise.
 - **End-to-end flows** — five Maestro flows under [`.maestro/`](.maestro) cover
   capture, completion, a Pomodoro, a habit check-in and export. A static suite
   checks that each flow still parses and only targets `testID`s the app defines.
@@ -43,6 +64,12 @@ the data format, so updates install over 1.2.3 without a migration.
   recorded in the activity log.
 - **Do Not Disturb bypass is opt-in**, off by default, with the trade-off stated
   in the UI.
+- **Place alerts use the same channels as timed reminders.** A location banner
+  used to be posted with no Android channel at all, which put it on Android's own
+  "Miscellaneous" channel — outside the four Settings describes and impossible to
+  tune or silence. It now carries a `taskflow.place` category (**Complete** /
+  **Snooze 1h** / **Open**) and routes by task priority, Do-Not-Disturb rules
+  included.
 - **Release build size**: R8 minification and resource shrinking are now enabled
   via `expo-build-properties`.
 - **All user-facing copy in the tabs and Settings** goes through an English
@@ -54,6 +81,13 @@ the data format, so updates install over 1.2.3 without a migration.
 - `expo-blur`, `expo-device` and `expo-secure-store` — nothing imported any of
   them. They contributed native code to the APK while the JS bundle stayed
   byte-identical.
+
+### Documentation
+
+- The README now states its **known limitations** up front: no share-sheet
+  entry, no drag-and-drop on the board, hardware-only behaviours verified by
+  inspection, Android only, and app lock being a privacy screen rather than
+  encryption.
 
 ## [1.2.3] — 2026-10-05
 

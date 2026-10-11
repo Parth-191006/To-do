@@ -32,8 +32,23 @@ variable the app reads, and what a stranger can do with it, is listed in
 
 Run the migrations in [`supabase/migrations/`](../supabase/migrations/) in order.
 They create every table, the row-level security policies, the per-field merge
-column and the AI rate limiter. Then deploy the functions in
-[`supabase/functions/`](../supabase/functions/) — see that folder's README.
+column, the AI rate limiter and (0006) the list-invite functions and table.
+Then deploy the functions in [`supabase/functions/`](../supabase/functions/) —
+see that folder's README.
+
+### List invites
+
+With a backend configured, **Share & invite** on a list hands you two things: a
+`mailto:` draft in your own mail app, and the invite link
+(`taskflow://join/<token>`). Both come from one token, which matters for a
+single-use credential — see [SECURITY.md](../SECURITY.md).
+
+The invitee opens the link with TaskFlow installed. Three outcomes, all stated
+explicitly on screen rather than as a generic failure: it joins them to the list;
+it parks the invite and asks them to sign in when they have no session yet (the
+root layout replays it the moment they do); or it says why the token is dead
+(expired, already used, invited a different address). Without a backend the
+screen says lists cannot be shared yet instead of pretending.
 
 ## The AI planner, plainly
 
@@ -47,7 +62,13 @@ column and the AI rate limiter. Then deploy the functions in
 
 **On the device, always:** tasks, notes, subtasks, lists, tags, habits and
 their logs, focus sessions, voice notes, photo attachments, preferences. One
-SQLite file. **No telemetry, no analytics SDK, no crash reporter.**
+SQLite file. **No telemetry, no analytics SDK, and nothing uploaded.**
+
+**On the device, only if you opt in:** a crash log (Settings → Diagnostics, off by
+default). Uncaught errors are kept locally with emails, token-like runs and long
+digit strings scrubbed out of the text before it is written. There is no upload
+path — the log is yours to read and share. A parked invite token, waiting for
+you to sign in, also lives on the device until it is used or discarded.
 
 **Synced, only if you configure Supabase and sign in:** task, project, tag,
 habit and focus-session rows, plus the collaboration activity log. Attachment

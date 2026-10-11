@@ -56,11 +56,14 @@ Sideloading, older builds and troubleshooting: [docs/INSTALL.md](docs/INSTALL.md
 **Capture** — type `Submit report tomorrow 5pm #Work !high ~45m` and the date,
 time, tag, priority and estimate are recognised as you type and shown as chips.
 Also voice notes with optional transcription, photo attachments, task templates
-and a repeat-last shortcut.
+and a repeat-last shortcut. Anything that can open a URL can push text in:
+`taskflow://add?text=…` shows what it parsed and asks before writing.
 
 **Organise** — nested subtasks, colour-coded lists, tags and an inbox. Four
 views over the same data: **List**, **Kanban**, **Calendar agenda** and
-**Eisenhower matrix**. Today is sorted Overdue → Today → Upcoming → Anytime →
+**Eisenhower matrix** — and all four can finish a task in place (swipe on List,
+the advance arrow on Kanban, a checkbox in the agenda and the matrix) rather
+than making you open it. Today is sorted Overdue → Today → Upcoming → Anytime →
 Completed, with live counters, and search runs over SQLite FTS5.
 
 **Focus** — a large countdown ring bound to the task you are working on, with
@@ -75,15 +78,20 @@ focus by project over 7/14/30-day windows. Empty states say what unlocks each
 chart rather than showing a blank.
 
 **Reminders** — time, recurring and location alerts. Actionable banners offer
-**Complete**, **Snooze 5m / 1h / Tomorrow**, **Open** and *start a focus block*.
-Each permission is requested on first use, after a short explanation.
+**Complete**, **Snooze 5m / 1h / Tomorrow**, **Open** and *start a focus block*;
+a place alert offers **Complete**, **Snooze 1h** and **Open**. Each permission is
+requested on first use, after a short explanation, and a place alert lands on the
+same urgency channel as a timed one.
 
 **Data** — export JSON or CSV, import from pasted JSON, an automatic local
 backup written before anything destructive, and restore from either. Optional
 biometric app lock.
 
 **Optional cloud** — set two environment variables and the same lists sync
-between people, with real-time updates and per-field merging. See
+between people, with real-time updates and per-field merging. **Invite someone
+by email:** the app mints a single-use token for that list, the link opens
+TaskFlow on their phone and joins them to it. Sent before they have an account,
+the invite is parked and replayed the moment they sign in. See
 [docs/CONFIGURATION.md](docs/CONFIGURATION.md).
 
 **Design** — light / dark / system themes, haptics, spring motion, and a palette
@@ -116,12 +124,20 @@ the UI; Android is the shipping target.
 
 Your tasks, notes, habits, focus sessions, attachments and preferences live in
 one SQLite file on the device. **There is no telemetry, no analytics SDK and no
-crash reporter.**
+crash reporter that uploads anything.**
 
 - Nothing is uploaded while you stay local.
+- An **opt-in crash log** (Settings → Diagnostics, **off by default**) keeps
+  uncaught errors on this device only, after scrubbing email addresses, token-like
+  runs and long digit strings. Nothing is sent anywhere; you can read it and
+  share it yourself if you want to report a bug. Turning it off stops capture —
+  it does not quietly delete what you chose to keep.
 - The only network calls this build can make are the **optional** Supabase sync
   (only with your own credentials, after you sign in) and an AI breakdown or
   transcription endpoint if you configured one.
+- A list invite leaves the device only as the link you chose to send. The token
+  is minted server-side, single-use and expiring; the app never writes list
+  membership itself.
 - The subtask planner is **rule-based** — a keyword-matched template library that
   ships in the app — and it is both the default and the fallback, so it works in
   airplane mode. Pointing it at a remote model is an optional upgrade.
@@ -130,6 +146,32 @@ crash reporter.**
 
 Full detail, and the one table of what each environment variable can do:
 [docs/CONFIGURATION.md](docs/CONFIGURATION.md) · [SECURITY.md](SECURITY.md).
+
+---
+
+## Known limitations
+
+Stated here rather than discovered later:
+
+- **No share-sheet entry.** TaskFlow does not appear in Android's *Share* menu.
+  An inbound share needs an `ACTION_SEND` intent filter read from the launching
+  Intent, and React Native only surfaces `ACTION_VIEW` — so it requires a native
+  module and a development build. The link route above (`taskflow://add?text=…`)
+  covers the same ground for anything that can open a URL: a bookmarklet, an
+  automation app, a shortcut, a bot.
+- **No drag-and-drop on the board.** Moving a card is a tap on the advance
+  arrow: a drag is unreachable with a screen reader and easy to trigger by
+  accident in a horizontal lane.
+- **Notifications, geofences and exact alarms are verified by inspection, not on
+  hardware.** The code paths are complete and the release workflow builds the
+  APK, but sound, vibration, lock-screen actions, OEM notification quirks and
+  geofence wake-ups need a real phone. Anything still unverified is called out in
+  [docs/AUDIT.md](docs/AUDIT.md).
+- **Android only.** There is no sideloadable iOS build; TestFlight through EAS
+  is the only public path. The APK is sideloaded, so there is no Play Protect
+  review and no automatic update channel.
+- **App lock is a privacy screen,** not encryption: it gates the UI, and the
+  SQLite file is protected only by whatever full-disk encryption the OS does.
 
 ---
 

@@ -16,8 +16,8 @@ changes is built and signed by `.github/workflows/android-apk.yml`; the on-devic
 (sound, lock-screen behaviour, OEM notification quirks) still has to be run on a phone.
 Anything that cannot work without a device is called out in `Known gaps`.
 
-**The suites moved to Vitest in this release** (`tests/`, 115 assertions) —
-row-level "Proof" references below point at them.
+**The suites moved to Vitest in this release** (`tests/`, 261 assertions at the
+time of the second pass below) — row-level "Proof" references point at them.
 
 Legend — **Works?**
 `yes` = complete and reachable · `fixed` = was broken, fixed in this pass ·
@@ -92,6 +92,25 @@ Legend — **Works?**
 | Sync — deletes against edits | fixed | A tombstone and an offline rename could resolve differently depending on which row happened to be newer: a local rename could drop the delete (the task came back) or a delete could silently take the rename with it. | An explicit field stamp always outranks a row-level fallback, so a stamped `deleted_at` always wins the row; a local rename the tombstone displaced is recorded in the activity feed. Proof: `tests/merge.test.ts` and `tests/sync-engine.test.ts`. |
 | Sync — offline queue order | yes | `sync_outbox` drains `ORDER BY created_at ASC`, so two tag assignments replay in the order they were made. | Proof: `tests/sync-engine.test.ts` drives the real `runSync` against a throwaway SQLite database and asserts the backend saw delete → insert → delete → insert, with the last write intact. |
 | Dead-end buttons | fixed | Two: the habit-reminder code path had no UI, and "Start focus" from a notification opened the screen without starting anything. Also `reorderTasks` was unreachable dead code. | Both wired; `reorderTasks` deleted. Every remaining control was traced to an effect. |
+
+## Second pass — collaboration, diagnostics and cross-view parity (2026-10-11)
+
+Same method, same limitation: no device attached, so each row is *complete and
+reachable by inspection plus the executable proof named in it*, not observed on
+hardware. This pass added four suites (`invites`, `crash-log`, `views-parity`,
+and the place-alert routing added to `geofence`), taking `tests/` to 261
+assertions.
+
+| Feature | Works? | What was broken | Fix |
+| --- | --- | --- | --- |
+| Invite a collaborator by link | added | "Invite by email" opened a `mailto:` draft and nothing else: the recipient could install the app and sign in and still see an empty list, with no way to reach yours. | Migration 0006 adds `list_invites` plus `create_list_invite` / `accept_list_invite` (`SECURITY DEFINER`, single-use, expiring, optionally address-bound). The list screen mints one token and uses it for both the email and the link. Proof: `tests/invites.test.ts` (14 assertions) pins the parse rules and the two email states. |
+| Invite link arriving before sign-in | added | The token is single-use; an invitee with no account yet had nothing to come back to. | The token is parked on the device and replayed the moment a session exists, because re-finding the email is the step that loses people. "Discard" is a real choice. |
+| Dead invite links | added | A consumed, expired or wrongly-addressed token would have read as one generic "invalid link". | `accept_list_invite` reports which, and the screen says so — expired, already used, or addressed to someone else. |
+| Quick add by link | added | There was no inbound path into the app at all. | `taskflow://add?text=…` parses the text, shows the parsed title and its chips, and writes only on an explicit "Add task". The share-sheet half (`ACTION_SEND`) is **not** built and is documented as a limitation: React Native surfaces only `ACTION_VIEW`, so it needs a native module and a development build. |
+| Opt-in crash log | added | Nothing captured why a build broke on someone else's phone. | Off by default in Settings → Diagnostics. A global handler stores reports **locally only**, after [`src/domain/crashLog.ts`](src/domain/crashLog.ts) scrubs email addresses, token-like runs and long digit strings; the queue dedupes by fingerprint, caps at 20, is viewable/shareable, and clearing is a separate explicit action. There is no upload path to leak from. Proof: `tests/crash-log.test.ts` (17 assertions), including the scrubbing itself. |
+| Camera primer | fixed | The camera opened straight into the OS dialog from Quick Add, with no in-app explanation, so a denial was permanent and unexplained — the same defect the mic and location primers had already fixed. | A `camera` kind on the existing explain-then-ask sheet. |
+| Complete a task from Agenda or Matrix | fixed | Both views could only *open* a task: finishing anything meant a bounce through the detail screen, while List (swipe) and Board (advance arrow) could do it in place. Every view looked finished on its own. | The list's own checkbox — same `toggleTaskLabel` verb, same checked state — on agenda rows and matrix quadrants, wired to the store's status path so `completed_at` and reminder re-arming still happen. Proof: `tests/views-parity.test.ts` (5 assertions). |
+| Place alerts land on a channel the user can tune | fixed | The headless geofence handler posted with no channel id, so Android invented its own "Miscellaneous" channel — outside the four Settings describes, and impossible to tune or silence. | The banner now carries a `taskflow.place` category (**Complete** / **Snooze 1h** / **Open**) and routes through the same `channelForPriority` as timed reminders, DND-bypass rules included. Proof: `tests/geofence.test.ts` (19 assertions). |
 
 ## Found while capturing the screenshots
 
