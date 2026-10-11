@@ -9,6 +9,8 @@ Release APKs are published for every `v*` tag:
 
 ## [Unreleased]
 
+## [1.2.4] — 2026-10-11
+
 Release hardening: CI and signing, a security pass over every public variable,
 per-field sync, end-to-end tests and a documentation split — then list invites,
 an opt-in crash log, quick add by link and a parity pass over the four views. The
@@ -233,6 +235,7 @@ The teal rebrand.
 Initial private builds of the offline-first task manager: SQLite core,
 natural-language capture, the four views, notifications and the focus timer.
 
+[1.2.4]: https://github.com/Parth-191006/To-do/releases/tag/v1.2.4
 [1.2.3]: https://github.com/Parth-191006/To-do/releases/tag/v1.2.3
 [1.2.2]: https://github.com/Parth-191006/To-do/releases/tag/v1.2.2
 [1.2.1]: https://github.com/Parth-191006/To-do/releases/tag/v1.2.1

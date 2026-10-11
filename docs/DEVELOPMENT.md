@@ -5,7 +5,7 @@ need it if you are working on the app — not if you just want to use it.
 
 Set-up, architecture and the data schema live in
 [ARCHITECTURE.md](../ARCHITECTURE.md); the feature-by-feature audit that drove
-release 1.2.3 is in [AUDIT.md](AUDIT.md).
+releases 1.2.3 and 1.2.4 is in [AUDIT.md](AUDIT.md).
 
 ## Scripts
 
