@@ -145,7 +145,32 @@ keytool -genkeypair -v -keystore taskflow-release.keystore \
 It prompts for the store password, the key password and a name/organisation.
 Use a long password and store it in a password manager **with a copy of the
 `.keystore` file** — losing either one means the next release has a new
-identity. To check an existing keystore instead:
+identity.
+
+No JDK on the machine? OpenSSL writes the same PKCS#12 container (the format
+JDK 9+ keys live in anyway), and the workflow's `keytool -list` reads it
+unchanged. Git Bash rewrites arguments that look like paths, which is what
+`MSYS_NO_PATHCONV` is for here:
+
+```bash
+# Alphanumeric only: the password is passed to `apksigner --ks-pass pass:...`,
+# where quotes, spaces and `$` do not survive.
+PW="$(openssl rand -base64 48 | tr -dc 'A-Za-z0-9' | cut -c1-28)"
+echo "$PW"        # put this in ANDROID_KEYSTORE_PASSWORD and ANDROID_KEY_PASSWORD
+
+MSYS_NO_PATHCONV=1 openssl req -x509 -newkey rsa:2048 -sha256 -nodes \
+  -days 10950 -keyout key.pem -out cert.pem \
+  -subj "/CN=TaskFlow Release/O=TaskFlow/C=IN"
+openssl pkcs12 -export -inkey key.pem -in cert.pem -name taskflow \
+  -out taskflow-release.keystore -passout "pass:$PW"
+rm -f key.pem
+```
+
+Use the same value for `ANDROID_KEYSTORE_PASSWORD` and `ANDROID_KEY_PASSWORD` —
+PKCS#12 has no separate key password, and `keytool` refuses a keystore where the
+two differ.
+
+To check an existing keystore instead:
 
 ```bash
 keytool -list -v -keystore taskflow-release.keystore    # prints the aliases
