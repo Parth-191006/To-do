@@ -1,0 +1,350 @@
+name: Verify release
+
+# What this does
+# --------------
+# Downloads the file that `releases/latest/download/TaskFlow-latest.apk` actually
+# serves — the permanent link in the README, in docs/INSTALL.md and in every
+# invite email — and fails unless it is the build its own tag says it is, signed
+# by the key this repository holds in secrets.
+#
+# Three ways that link can lie, and the check for each:
+#
+#   1. Self-consistency. The APK's versionName, versionCode and package must
+#      match `app.json` *at its own release tag* — asset uploaded to the wrong
+#      release, or a build taken from a commit that was never tagged.
+#   2. Signature. The APK's signing-certificate SHA-256 must equal the key in
+#      `ANDROID_KEYSTORE_BASE64`. A release signed by anything else installs
+#      fine for a new user and is invisible until an existing phone refuses to
+#      update — the one failure a green Android APK run cannot show you.
+#   3. Freshness. When this runs behind a tag build, that tag must be what
+#      `releases/latest` points at, or the tag never reached users. A re-run of
+#      an older tag is reported, not failed: `latest` being newer is expected.
+#
+# One more check rides along: both assets in the release must be the same bytes
+# as the download, since the permanent name is a copy of the version-named one.
+# A partial upload or a hand-edited asset shows up here.
+#
+# Why its own workflow instead of a job in android-apk.yml
+# -------------------------------------------------------
+# None of this needs Gradle. Running it on a schedule is what catches damage
+# from any cause *later* — a deleted release, a truncated upload, a rotated
+# key — rather than only in the minutes after a tag.
+#
+# A failure here does not mean the release is broken: it means what users
+# download and what the repository claims have diverged. A keystore rotation
+# fails it on purpose until the next release, because installs of the current
+# latest cannot be updated by a build signed with the new key.
+
+on:
+  # After every Android APK run, so a tag is checked the moment it publishes.
+  workflow_run:
+    workflows: ["Android APK"]
+    types: [completed]
+  # By hand, which is also how to re-check the secrets without cutting a tag.
+  workflow_dispatch:
+  # Mondays 06:00 UTC: the drift that no single release run can notice.
+  schedule:
+    - cron: '0 6 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: releases/latest is what it claims
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # A `workflow_run` event fires for failed builds too, and a failed build has
+    # published nothing new to check.
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          # Tags, because the expected version comes from `app.json` at the
+          # released tag — `main` may already be ahead of it.
+          fetch-depth: 0
+
+      # JDK only for `keytool`: the expected fingerprint is read from the
+      # keystore in secrets, so this guard keeps working across a key rotation
+      # without an edit here.
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Find the release under test
+        id: target
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if ! TAG="$(gh api "repos/${{ github.repository }}/releases/latest" --jq .tag_name)"; then
+            echo "::error title=GitHub API refused::Could not read the latest release. See the gh error above."
+            exit 1
+          fi
+          if [ -z "${TAG:-}" ] || [ "$TAG" = "null" ]; then
+            echo "::error title=No latest release::releases/latest resolved to nothing, so the permanent APK link is dead."
+            exit 1
+          fi
+          case "$TAG" in
+            v*) ;;
+            *) echo "::error title=Unexpected tag::releases/latest is '$TAG'; expected a v* version tag."
+               exit 1 ;;
+          esac
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Release under test: $TAG"
+
+      - name: Did the tag reach users?
+        if: github.event_name == 'workflow_run' && startsWith(github.event.workflow_run.head_branch, 'v')
+        env:
+          TRIGGERING_TAG: ${{ github.event.workflow_run.head_branch }}
+          LATEST_TAG: ${{ steps.target.outputs.tag }}
+        run: |
+          set -euo pipefail
+          # Compare the version numbers, not the strings: re-running an older
+          # tag must not look like a failure, and never reaching users must not
+          # pass as one.
+          A="${TRIGGERING_TAG#v}"; B="${LATEST_TAG#v}"
+          NEWEST="$(printf '%s\n%s\n' "$A" "$B" | sort -V | tail -1)"
+          if [ "$A" = "$B" ]; then
+            echo "releases/latest is $LATEST_TAG — the tag this run followed."
+          elif [ "$NEWEST" = "$B" ]; then
+            echo "::notice::releases/latest is $LATEST_TAG, newer than the $TRIGGERING_TAG this run followed. Re-running an older tag does not move the permanent link; nothing to fix."
+          else
+            echo "::error title=Tag did not reach users::$TRIGGERING_TAG finished, but releases/latest still points at $LATEST_TAG. Anyone opening the permanent link gets the older build."
+            exit 1
+          fi
+
+      - name: Read what the tag promises
+        id: expected
+        env:
+          LATEST_TAG: ${{ steps.target.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if ! git rev-parse --verify --quiet "refs/tags/${LATEST_TAG}" > /dev/null; then
+            echo "::error title=Tag is missing::$LATEST_TAG is not in this checkout, so there is no app.json to check the APK against."
+            exit 1
+          fi
+          CONFIG="${RUNNER_TEMP}/tag-app.json"
+          git show "${LATEST_TAG}:app.json" > "$CONFIG"
+          VERSION="$(node -p "require('$CONFIG').expo.version")"
+          CODE="$(node -p "require('$CONFIG').expo.android.versionCode")"
+          PACKAGE="$(node -p "require('$CONFIG').expo.android.package")"
+          {
+            echo "version=$VERSION"
+            echo "code=$CODE"
+            echo "package=$PACKAGE"
+          } >> "$GITHUB_OUTPUT"
+          echo "$LATEST_TAG promises TaskFlow $VERSION, versionCode $CODE, package $PACKAGE."
+
+      - name: Read the signing key
+        id: key
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          missing=()
+          [ -n "${ANDROID_KEYSTORE_BASE64:-}" ] || missing+=(ANDROID_KEYSTORE_BASE64)
+          [ -n "${ANDROID_KEYSTORE_PASSWORD:-}" ] || missing+=(ANDROID_KEYSTORE_PASSWORD)
+          [ -n "${ANDROID_KEY_ALIAS:-}" ] || missing+=(ANDROID_KEY_ALIAS)
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "::error title=Signing secrets missing::Without ${missing[*]} there is no way to know which key is expected."
+            exit 1
+          fi
+
+          KEYSTORE="${RUNNER_TEMP}/expected.keystore"
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$KEYSTORE"
+
+          # `if !` around the whole listing, not a pipeline: with `set -e` and
+          # `pipefail`, a bad password would abort at the assignment and the
+          # messages below would never print — a silent failure in the one place
+          # a person needs to be told which secret to fix.
+          LISTING=""
+          if ! LISTING="$(keytool -list -v -keystore "$KEYSTORE" \
+                 -storepass "$ANDROID_KEYSTORE_PASSWORD" -alias "$ANDROID_KEY_ALIAS" 2>&1)"; then
+            echo "::error title=Keystore unreadable::ANDROID_KEYSTORE_PASSWORD and/or ANDROID_KEY_ALIAS do not open ANDROID_KEYSTORE_BASE64. keytool: $(printf '%s' "$LISTING" | head -1)"
+            rm -f "$KEYSTORE"
+            exit 1
+          fi
+          # Never leave the decoded key in the workspace.
+          rm -f "$KEYSTORE"
+
+          FP="$(printf '%s' "$LISTING" | sed -n 's/.*SHA256: *//p' | head -1 \
+                | tr -d ':' | tr -d '[:space:]' | tr 'A-Z' 'a-z')"
+          if [ -z "$FP" ]; then
+            echo "::error title=No signing certificate::keytool opened the keystore but listed no SHA256 certificate, so ANDROID_KEY_ALIAS does not name a key entry in it."
+            exit 1
+          fi
+          echo "fingerprint=$FP" >> "$GITHUB_OUTPUT"
+          echo "Expected signing certificate SHA-256: $FP"
+
+      - name: Download what releases/latest serves
+        id: download
+        run: |
+          set -euo pipefail
+          URL="https://github.com/${{ github.repository }}/releases/latest/download/TaskFlow-latest.apk"
+          APK="${RUNNER_TEMP}/TaskFlow-latest.apk"
+
+          # On a fresh tag the permalink can trail the release by a few seconds.
+          for attempt in $(seq 1 12); do
+            if curl -fsSL --retry 2 -o "$APK" "$URL"; then break; fi
+            echo "attempt ${attempt}: $URL not serving yet"
+            sleep 15
+          done
+          if [ ! -s "$APK" ]; then
+            echo "::error title=Permanent link is dead::$URL did not serve an APK."
+            exit 1
+          fi
+
+          SIZE="$(wc -c < "$APK")"
+          SHA="$(sha256sum "$APK" | cut -d' ' -f1)"
+          # The arm64 build is ~42 MB. Anything tiny is an error page or a stub,
+          # and would sail through a signature check as "some valid APK".
+          if [ "$SIZE" -lt 20000000 ]; then
+            echo "::error title=Suspiciously small APK::$URL served $SIZE bytes."
+            exit 1
+          fi
+
+          {
+            echo "path=$APK"
+            echo "size=$SIZE"
+            echo "sha=$SHA"
+          } >> "$GITHUB_OUTPUT"
+          echo "Downloaded $SIZE bytes, sha256 $SHA"
+
+      - name: Both assets are the same build
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LATEST_TAG: ${{ steps.target.outputs.tag }}
+          SHA: ${{ steps.download.outputs.sha }}
+        run: |
+          set -euo pipefail
+          RELEASE=""
+          if ! RELEASE="$(gh api "repos/${{ github.repository }}/releases/tags/${LATEST_TAG}")"; then
+            echo "::error title=Release not readable::gh api could not read the assets of $LATEST_TAG. See the gh error above."
+            exit 1
+          fi
+          # No template literals and no `${…}` here on purpose: this script sits
+          # inside a double-quoted bash string, where both would be expanded by
+          # the shell before node ever saw them.
+          ROW="$(node -e '
+            const release = JSON.parse(require("fs").readFileSync(0, "utf8"));
+            const wanted = ["TaskFlow-", process.env.LATEST_TAG, "-arm64-v8a.apk"].join("");
+            const byName = (name) => (release.assets || []).find((a) => a.name === name) || {};
+            const permanent = byName("TaskFlow-latest.apk");
+            const named = byName(wanted);
+            console.log([permanent.digest || "", named.digest || "", wanted].join(" "));
+          ' <<<"$RELEASE")"
+
+          read -r PERMANENT_DIGEST NAMED_DIGEST NAMED <<<"$ROW"
+          if [ -z "$PERMANENT_DIGEST" ] || [ -z "$NAMED_DIGEST" ]; then
+            echo "::error title=Asset missing::$LATEST_TAG does not carry both TaskFlow-latest.apk and $NAMED."
+            exit 1
+          fi
+          if [ "$PERMANENT_DIGEST" != "sha256:$SHA" ] || [ "$NAMED_DIGEST" != "sha256:$SHA" ]; then
+            echo "::error title=Assets disagree::The bytes served by the permanent link are not both release assets. permanent=$PERMANENT_DIGEST named=$NAMED_DIGEST downloaded=sha256:$SHA"
+            exit 1
+          fi
+          echo "Both assets are the same bytes: sha256 $SHA"
+
+      - name: Check version, package and signature
+        env:
+          APK: ${{ steps.download.outputs.path }}
+          SIZE: ${{ steps.download.outputs.size }}
+          SHA: ${{ steps.download.outputs.sha }}
+          LATEST_TAG: ${{ steps.target.outputs.tag }}
+          EXPECTED_VERSION: ${{ steps.expected.outputs.version }}
+          EXPECTED_CODE: ${{ steps.expected.outputs.code }}
+          EXPECTED_PACKAGE: ${{ steps.expected.outputs.package }}
+          EXPECTED_FP: ${{ steps.key.outputs.fingerprint }}
+        run: |
+          set -euo pipefail
+          SDK="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          if [ ! -d "$SDK/build-tools" ]; then
+            echo "::error title=Android SDK missing::No build-tools under $SDK, so the released APK cannot be read."
+            exit 1
+          fi
+          BUILD_TOOLS="$(ls -d "$SDK"/build-tools/* | sort -V | tail -1)"
+          AAPT2="${BUILD_TOOLS}/aapt2"
+          APKSIGNER="${BUILD_TOOLS}/apksigner"
+          for tool in "$AAPT2" "$APKSIGNER"; do
+            if [ ! -x "$tool" ]; then
+              echo "::error title=Android build-tools missing::$tool was not found, so the APK cannot be read."
+              exit 1
+            fi
+          done
+
+          if ! BADGING="$("$AAPT2" dump badging "$APK")"; then
+            echo "::error title=Could not read the APK::aapt2 dump badging failed on the file served by the permanent link."
+            exit 1
+          fi
+          ACTUAL_PACKAGE="$(sed -n "s/^package: name='\([^']*\)'.*/\1/p" <<<"$BADGING")"
+          ACTUAL_CODE="$(sed -n "s/.*versionCode='\([0-9]*\)'.*/\1/p" <<<"$BADGING")"
+          ACTUAL_VERSION="$(sed -n "s/.*versionName='\([^']*\)'.*/\1/p" <<<"$BADGING")"
+
+          # If aapt2 ever words its output differently, say so with the output
+          # in the log rather than reporting three empty values as a mismatch.
+          if [ -z "$ACTUAL_PACKAGE" ] || [ -z "$ACTUAL_CODE" ] || [ -z "$ACTUAL_VERSION" ]; then
+            echo "::error title=Could not read the APK::aapt2 dump badging did not yield a package, versionCode and versionName."
+            printf '%s\n' "$BADGING" | head -5
+            exit 1
+          fi
+
+          # The identity that signed it, read out of the APK itself — not from
+          # the build log, which is the thing under suspicion.
+          CERTS=""
+          if ! CERTS="$("$APKSIGNER" verify --print-certs "$APK" 2>&1)"; then
+            echo "::error title=Signature does not verify::apksigner refused the APK served by the permanent link: $(printf '%s' "$CERTS" | head -2 | tr '\n' ' ')"
+            exit 1
+          fi
+          ACTUAL_FP="$(printf '%s' "$CERTS" \
+            | sed -n 's/^Signer #1 certificate SHA-256 digest: *//p' | head -1 \
+            | tr -d '[:space:]' | tr 'A-Z' 'a-z')"
+          if [ -z "$ACTUAL_FP" ]; then
+            echo "::error title=Signature unreadable::apksigner verified the APK but reported no signer certificate to compare. Output: $(printf '%s' "$CERTS" | head -3 | tr '\n' ' ')"
+            exit 1
+          fi
+
+          SUMMARY="${RUNNER_TEMP}/verify-release.md"
+          {
+            echo "### What the permanent APK link serves"
+            echo
+            echo "Checked against \`$LATEST_TAG\` and the keystore in secrets."
+            echo
+            echo "| Field | Expected | In the APK | |"
+            echo "| --- | --- | --- | --- |"
+          } > "$SUMMARY"
+
+          status=0
+          check() { # label expected actual
+            if [ "$2" = "$3" ]; then
+              echo "ok   $1: $3"
+              printf '| %s | `%s` | `%s` | ✅ |\n' "$1" "$2" "$3" >> "$SUMMARY"
+            else
+              echo "FAIL $1: expected '$2', got '$3'"
+              printf '| %s | `%s` | `%s` | ❌ |\n' "$1" "$2" "$3" >> "$SUMMARY"
+              status=1
+            fi
+          }
+
+          check "versionName" "$EXPECTED_VERSION" "$ACTUAL_VERSION"
+          check "versionCode" "$EXPECTED_CODE" "$ACTUAL_CODE"
+          check "package" "$EXPECTED_PACKAGE" "$ACTUAL_PACKAGE"
+          check "signing certificate" "$EXPECTED_FP" "$ACTUAL_FP"
+
+          {
+            echo
+            echo "\`TaskFlow-latest.apk\` · $SIZE bytes · sha256 \`$SHA\`"
+          } >> "$SUMMARY"
+          cat "$SUMMARY" >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$status" -ne 0 ]; then
+            echo "::error title=releases/latest is wrong::The APK behind the permanent link does not match $LATEST_TAG. See the step summary."
+            exit 1
+          fi
+          echo "The permanent link serves $LATEST_TAG, signed by the key in this repository's secrets."

@@ -21,6 +21,29 @@ required. Every run of
 Because every release is signed with the same key, updates install over existing
 installs without losing local data.
 
+## The release guard
+
+[`verify-release.yml`](../.github/workflows/verify-release.yml) downloads what
+`releases/latest/download/TaskFlow-latest.apk` actually serves — the link in the
+README, in INSTALL.md and in every invite email — and fails unless it is the
+build its own tag claims, signed by the key in the secrets:
+
+| Check | Catches |
+| --- | --- |
+| versionName, versionCode, package vs `app.json` at the release tag | an asset uploaded to the wrong release; a build from a commit that was never tagged |
+| signing-certificate SHA-256 vs `ANDROID_KEYSTORE_BASE64` | a release signed by any other key — installs fine for a new user, invisible until an existing phone refuses to update |
+| `releases/latest` points at the tag that just finished | a tag that never reached users; a re-run of an older tag is reported, not failed |
+| both assets are the same bytes as the download | a partial upload or an asset edited after publication |
+
+It runs after every Android APK run, on demand, and weekly — the schedule is
+what catches damage from any cause later (a deleted release, a truncated upload,
+a rotated key) rather than only in the minutes after a tag.
+
+A failure is not "the release is broken": it means what users download and what
+the repository claims have diverged. Rotating the keystore fails it on purpose
+until the next release, because installs of the current `latest` cannot be
+updated by a build signed with the new key.
+
 You can also run it by hand from the Actions tab → **Android APK** → *Run
 workflow*, which is the quickest way to re-check the signing secrets without
 cutting a tag.

@@ -9,6 +9,17 @@ Release APKs are published for every `v*` tag:
 
 ## [Unreleased]
 
+### Added
+
+- **A release guard** — [`verify-release.yml`](.github/workflows/verify-release.yml)
+  downloads the APK the permanent link actually serves and fails unless its
+  versionName, versionCode and package match `app.json` at its own release tag,
+  its signing certificate is the key in `ANDROID_KEYSTORE_BASE64`, and
+  `releases/latest` is the tag that just finished. It runs after every Android
+  APK run, on demand and weekly, so damage from a deleted release, a truncated
+  upload or a rotated key is caught later too. Both release assets must also be
+  the same bytes as the download.
+
 ## [1.2.4] — 2026-10-11
 
 Release hardening: CI and signing, a security pass over every public variable,

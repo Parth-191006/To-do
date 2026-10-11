@@ -30,6 +30,14 @@ name: Android APK
 # could be used by anyone to sign an update. Releases now use only a key that
 # lives in secrets.
 #
+# What happens after this run
+# ---------------------------
+# `verify-release.yml` fires on completion, downloads the APK that
+# `releases/latest` serves and checks its version and signer against the tag and
+# the keystore in secrets. It lives in its own workflow because none of it needs
+# Gradle, and so it can also run weekly to catch drift no single release run can
+# see.
+#
 # Other build-time notes:
 #   - A cold Gradle build is ~20–40 min on public runners; gradle/actions caches
 #     the wrapper, dependencies and build cache to keep later runs cheaper.
