@@ -288,7 +288,7 @@ jobs:
           rm -f taskflow-release.keystore
 
       - name: Upload artifact (every build)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: TaskFlow-apk-${{ github.run_number }}
           path: TaskFlow-*.apk
