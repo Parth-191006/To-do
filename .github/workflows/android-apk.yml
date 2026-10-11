@@ -61,7 +61,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       # Runs before npm ci and the JDK setup so a signing misconfiguration costs
       # seconds, not a 20-minute Gradle build with a surprise at the end. GitHub
