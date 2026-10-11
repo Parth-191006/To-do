@@ -13,6 +13,7 @@ import { SmartInput } from '@/components/SmartInput';
 import { Card, Chip, EmptyState, Text } from '@/components/ui';
 import { listActivity } from '@/db/repositories/activity';
 import { listMembers } from '@/db/repositories/projects';
+import { buildInviteEmail } from '@/domain/invites';
 import { childrenOf, isOpen, sortByUrgency } from '@/store/selectors';
 import { useStore } from '@/store/useStore';
 import { useTheme } from '@/theme/ThemeProvider';
@@ -20,6 +21,7 @@ import {
   isSupabaseConfigured,
   subscribeToProjectChanges,
 } from '@/services/supabase/client';
+import { createListInvite, inviteUrlForToken } from '@/services/supabase/invites';
 import type { ActivityLog, Attachment, SharedListMember } from '@/domain/types';
 
 export default function ProjectScreen() {
@@ -93,10 +95,12 @@ export default function ProjectScreen() {
   );
 
   /**
-   * "Invite by email" used to be a Chip with no `onPress` — a visibly dead
-   * button. It now opens a real email draft (or the OS share sheet when no
-   * mail app can handle `mailto:`), carrying the list name and the download
-   * link so the invite actually reaches someone.
+   * "Invite by email" mints a real single-use invite when this build has a
+   * backend and a session, so the email carries a `taskflow://join/<token>`
+   * link that actually adds the recipient to the list. When it cannot (no
+   * backend, signed out, RPC failed) it degrades honestly: the same email
+   * goes out with the download link only, and the note says why — an invite
+   * body that pretends a link exists is worse than one that admits it does not.
    */
   const handleInvite = useCallback(async () => {
     const email = inviteEmail.trim();
@@ -106,28 +110,32 @@ export default function ProjectScreen() {
     }
 
     const listName = project?.name ?? 'my list';
-    const subject = `Invitation to collaborate on “${listName}” in TaskFlow`;
-    const body = [
-      'Hi,',
-      '',
-      `I’d like to share the “${listName}” list from TaskFlow with you.`,
-      '',
-      'Get TaskFlow (Android):',
-      'https://github.com/Parth-191006/To-do/releases/latest/download/TaskFlow-latest.apk',
-      '',
-      isSupabaseConfigured
-        ? 'Once it is installed, open Settings › Sync and sign in with this email so our lists replicate.'
-        : 'Once it is installed we can connect a shared backend (Settings › Sync) so our lists replicate.',
-      '',
-      '— sent from TaskFlow',
-    ].join('\n');
+    let inviteUrl: string | null = null;
+    if (isSupabaseConfigured) {
+      setInviteNote('Creating the invite link…');
+      // Bind the invite to the address it is being sent to, so the link is
+      // not forwardable to a stranger's account. The RPC needs the owner's
+      // session to exist; it never demands the two addresses match.
+      const token = await createListInvite(String(id), email).catch(() => null);
+      inviteUrl = token ? inviteUrlForToken(token) : null;
+    }
+
+    const { subject, body } = buildInviteEmail({
+      listName,
+      inviteUrl,
+      hasBackend: isSupabaseConfigured,
+    });
 
     const url = `mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
     try {
       const canOpen = await Linking.canOpenURL(url);
       if (canOpen) {
         await Linking.openURL(url);
-        setInviteNote('Opening your email app…');
+        setInviteNote(
+          inviteUrl
+            ? 'Opening your email app — the invite link is in the message.'
+            : 'Opening your email app — no invite link this time (see the note below).',
+        );
         return;
       }
     } catch {
@@ -141,7 +149,7 @@ export default function ProjectScreen() {
     } catch {
       setInviteNote('Could not open an email or share app on this device.');
     }
-  }, [inviteEmail, project?.name]);
+  }, [id, inviteEmail, project?.name]);
 
   if (!project) {
     return (
@@ -363,7 +371,7 @@ export default function ProjectScreen() {
 
           <Text variant="micro" color={theme.colors.textTertiary}>
             {isSupabaseConfigured
-              ? 'BOTH SIDES SIGN IN UNDER SETTINGS › SYNC FOR THE LIST TO REPLICATE LIVE.'
+              ? 'BOTH SIDES SIGN IN UNDER SETTINGS › SYNC FOR THE LIST TO REPLICATE LIVE. THE INVITE LINK IS SINGLE-USE AND EXPIRES AFTER 30 DAYS.'
               : 'CLOUD REPLICATION IS OFF ON THIS BUILD — THE INVITE CARRIES THE DOWNLOAD LINK SO THEY CAN INSTALL TASKFLOW.'}
           </Text>
         </View>
