@@ -147,7 +147,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Set up Node
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@v7
         with:
           # 24 matches ci.yml and the machine the suite is developed on: the
           # schema test needs the built-in `node:sqlite`, which on Node 22 is
