@@ -302,8 +302,13 @@ jobs:
             echo "::error title=Signature does not verify::apksigner refused the APK served by the permanent link: $(printf '%s' "$CERTS" | head -2 | tr '\n' ' ')"
             exit 1
           fi
+          # Not anchored on "Signer #1": apksigner prefixes the line with the
+          # scheme it verified — `V3.0 Signer: certificate SHA-256 digest:` on a
+          # modern build-tools, `Signer #1 certificate SHA-256 digest:` on older
+          # ones — and the first line that carries a digest is the signer either
+          # way. A release is signed by one key, so the first match is the one.
           ACTUAL_FP="$(printf '%s' "$CERTS" \
-            | sed -n 's/^Signer #1 certificate SHA-256 digest: *//p' | head -1 \
+            | sed -n 's/.*certificate SHA-256 digest: *//p' | head -1 \
             | tr -d '[:space:]' | tr 'A-Z' 'a-z')"
           if [ -z "$ACTUAL_FP" ]; then
             echo "::error title=Signature unreadable::apksigner verified the APK but reported no signer certificate to compare. Output: $(printf '%s' "$CERTS" | head -3 | tr '\n' ' ')"
