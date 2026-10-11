@@ -19,6 +19,15 @@ import {
 export const CATEGORY_TASK = 'taskflow.task';
 export const CATEGORY_HABIT = 'taskflow.habit';
 export const CATEGORY_FOCUS = 'taskflow.focus';
+/**
+ * Place alerts ("when I reach the office"). A separate category rather than
+ * reusing `CATEGORY_TASK`: the banner arrives *because the user moved*, not at
+ * a time they chose, so "Snooze 5m" and "Start focus" are the wrong verbs and
+ * are deliberately absent. Complete / Snooze 1h / Open still resolve through
+ * the same `handleNotificationResponse` switch, since the payload carries the
+ * task id either way.
+ */
+export const CATEGORY_PLACE = 'taskflow.place';
 
 export const ACTION_COMPLETE = 'TASKFLOW_COMPLETE';
 export const ACTION_SNOOZE_5 = 'TASKFLOW_SNOOZE_5';
@@ -83,6 +92,26 @@ export async function registerNotificationCategories(): Promise<void> {
       identifier: ACTION_COMPLETE,
       buttonTitle: 'Done',
       options: { opensAppToForeground: false },
+    },
+  ]);
+
+  await Notifications.setNotificationCategoryAsync(CATEGORY_PLACE, [
+    {
+      identifier: ACTION_COMPLETE,
+      buttonTitle: 'Complete',
+      options: { opensAppToForeground: false },
+    },
+    {
+      // The next-most-likely intent when the alert lands at an awkward moment:
+      // push it an hour rather than dismissing the reminder entirely.
+      identifier: ACTION_SNOOZE_60,
+      buttonTitle: 'Snooze 1h',
+      options: { opensAppToForeground: false },
+    },
+    {
+      identifier: ACTION_OPEN,
+      buttonTitle: 'Open',
+      options: { opensAppToForeground: true },
     },
   ]);
 

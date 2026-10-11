@@ -10,8 +10,15 @@ import { describe, expect, it } from 'vitest';
 
 import type { LocationReminder, TaskStatus, TaskWithTags } from '@/domain/types';
 import {
+  DEFAULT_CHANNEL,
+  HIGH_CHANNEL,
+  HIGH_DND_CHANNEL,
+  setDndBypassPreference,
+} from '@/services/notifications/channelPrefs';
+import {
   buildGeofencePlan,
   createGeofenceSyncEngine,
+  geofenceChannelId,
   regionIdForTask,
   signatureForTasks,
   taskIdFromRegion,
@@ -149,8 +156,43 @@ describe('geofence signatures and plans', () => {
   });
 
   it('the plan carries the banner payload the headless handler needs', () => {
-    const plan = buildGeofencePlan([place('p', { trigger: 'leave', label: 'Gym' }, { title: 'Leg day' })]);
-    expect(plan.payloads).toEqual([{ taskId: 'p', title: 'Leg day', trigger: 'leave', label: 'Gym' }]);
+    const plan = buildGeofencePlan([
+      place('p', { trigger: 'leave', label: 'Gym' }, { title: 'Leg day', priority: 'urgent' }),
+    ]);
+    expect(plan.payloads).toEqual([
+      { taskId: 'p', title: 'Leg day', trigger: 'leave', label: 'Gym', priority: 'urgent' },
+    ]);
+  });
+
+  it('carries priority, because the banner routes on it', () => {
+    // Without this the place alert would land on whatever channel the OS
+    // invents; the payload is what the headless handler reads to pick one.
+    const plan = buildGeofencePlan([place('p', {}, { priority: 'high' })]);
+    expect(plan.payloads[0]?.priority).toBe('high');
+  });
+});
+
+describe('place alerts use the same channel routing as timed reminders', () => {
+  it('sends ordinary priorities to the default channel in both DND modes', () => {
+    for (const bypass of [false, true]) {
+      setDndBypassPreference(bypass);
+      expect(geofenceChannelId('none')).toBe(DEFAULT_CHANNEL);
+      expect(geofenceChannelId('low')).toBe(DEFAULT_CHANNEL);
+      expect(geofenceChannelId('medium')).toBe(DEFAULT_CHANNEL);
+    }
+  });
+
+  it('never bypasses Do Not Disturb unless the user opted in', () => {
+    setDndBypassPreference(false);
+    expect(geofenceChannelId('high')).toBe(HIGH_CHANNEL);
+    expect(geofenceChannelId('urgent')).toBe(HIGH_CHANNEL);
+    setDndBypassPreference(true);
+    expect(geofenceChannelId('urgent')).toBe(HIGH_DND_CHANNEL);
+    setDndBypassPreference(false);
+  });
+
+  it('falls back to the default channel when the payload is gone', () => {
+    expect(geofenceChannelId(undefined)).toBe(DEFAULT_CHANNEL);
   });
 });
 

@@ -5,7 +5,8 @@ import { Pressable, StyleSheet, View } from 'react-native';
 
 import type { TaskWithTags } from '@/domain/types';
 import { useTheme } from '@/theme/ThemeProvider';
-import { describeTask } from '@/utils/a11y';
+import { describeTask, toggleTaskLabel } from '@/utils/a11y';
+import { success } from '@/utils/haptics';
 
 import { Text } from '../ui';
 
@@ -19,13 +20,54 @@ interface CalendarAgendaProps {
   tasks: TaskWithTags[];
   days?: number;
   onOpen: (id: string) => void;
+  /** Completes (or re-opens) a task without leaving the agenda. */
+  onToggle: (id: string) => void;
+}
+
+/**
+ * The agenda's completion control.
+ *
+ * List has swipe-to-complete and Board has an advance arrow, but the agenda
+ * only had "open the task" — finishing anything from this view meant a bounce
+ * through the detail screen. This is the same checkbox the list uses, down to
+ * the label verb (`toggleTaskLabel`), so the gesture reads identically
+ * everywhere.
+ */
+function CompleteBox({
+  title,
+  done,
+  onToggle,
+}: {
+  title: string;
+  done: boolean;
+  onToggle: () => void;
+}) {
+  const theme = useTheme();
+  return (
+    <Pressable
+      hitSlop={10}
+      onPress={() => {
+        success();
+        onToggle();
+      }}
+      accessibilityRole="checkbox"
+      accessibilityState={{ checked: done }}
+      accessibilityLabel={toggleTaskLabel(title, done)}
+    >
+      <Ionicons
+        name={done ? 'checkmark-circle' : 'ellipse-outline'}
+        size={20}
+        color={done ? theme.colors.success : theme.colors.borderStrong}
+      />
+    </Pressable>
+  );
 }
 
 /**
  * Rolling agenda: the next N days grouped by date, with an "Anytime" bucket
  * for tasks that have no due date so nothing silently disappears.
  */
-export function CalendarAgenda({ tasks, days = 14, onOpen }: CalendarAgendaProps) {
+export function CalendarAgenda({ tasks, days = 14, onOpen, onToggle }: CalendarAgendaProps) {
   const theme = useTheme();
 
   const { groups, undated } = useMemo(() => {
@@ -113,47 +155,62 @@ export function CalendarAgenda({ tasks, days = 14, onOpen }: CalendarAgendaProps
               }}
             />
           ) : (
-            group.items.map((task) => (            <Pressable
-              key={task.id}
-              onPress={() => onOpen(task.id)}
-              accessibilityRole="button"
-              accessibilityLabel={`${describeTask({
-                title: task.title,
-                priority: task.priority,
-                done: task.status === 'done',
-              })}${task.dueAt ? `, due ${dueText(task.dueAt)}` : ''}. Opens the task.`}
-              style={{ marginLeft: 52, flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm,
-                  backgroundColor: theme.colors.surface,
-                  borderRadius: theme.radii.md,
-                  borderWidth: StyleSheet.hairlineWidth,
-                  borderColor: theme.colors.border,
-                  paddingVertical: theme.spacing.sm,
-                  paddingHorizontal: theme.spacing.md,
-                }}
-              >
-                <View
+            group.items.map((task) => {
+              const done = task.status === 'done';
+              return (
+                <Pressable
+                  key={task.id}
+                  onPress={() => onOpen(task.id)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${describeTask({
+                    title: task.title,
+                    priority: task.priority,
+                    done,
+                  })}${task.dueAt ? `, due ${dueText(task.dueAt)}` : ''}. Opens the task.`}
                   style={{
-                    width: 3,
-                    height: 26,
-                    borderRadius: 2,
-                    backgroundColor: theme.colors.priority[task.priority],
+                    marginLeft: 52,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: theme.spacing.sm,
+                    backgroundColor: theme.colors.surface,
+                    borderRadius: theme.radii.md,
+                    borderWidth: StyleSheet.hairlineWidth,
+                    borderColor: theme.colors.border,
+                    paddingVertical: theme.spacing.sm,
+                    paddingHorizontal: theme.spacing.md,
                   }}
-                />
-                <View style={{ flex: 1 }}>
-                  <Text variant="body" numberOfLines={2}>
-                    {task.title}
-                  </Text>
-                  {task.dueAt ? (
-                    <Text variant="caption" color={theme.colors.textTertiary}>
-                      {dueText(task.dueAt)}
+                >
+                  <View
+                    style={{
+                      width: 3,
+                      height: 26,
+                      borderRadius: 2,
+                      backgroundColor: theme.colors.priority[task.priority],
+                    }}
+                  />
+                  <View style={{ flex: 1 }}>
+                    <Text
+                      variant="body"
+                      numberOfLines={2}
+                      color={done ? theme.colors.textTertiary : theme.colors.textPrimary}
+                      style={done ? { textDecorationLine: 'line-through' } : undefined}
+                    >
+                      {task.title}
                     </Text>
-                  ) : null}
-                </View>
-                {task.status === 'done' ? (
-                  <Ionicons name="checkmark-circle" size={18} color={theme.colors.success} />
-                ) : null}
-              </Pressable>
-            ))
+                    {task.dueAt ? (
+                      <Text variant="caption" color={theme.colors.textTertiary}>
+                        {dueText(task.dueAt)}
+                      </Text>
+                    ) : null}
+                  </View>
+                  <CompleteBox
+                    title={task.title}
+                    done={done}
+                    onToggle={() => onToggle(task.id)}
+                  />
+                </Pressable>
+              );
+            })
           )}
         </View>
       ))}
@@ -185,10 +242,14 @@ export function CalendarAgenda({ tasks, days = 14, onOpen }: CalendarAgendaProps
                 paddingHorizontal: theme.spacing.md,
               }}
             >
-              <Ionicons name="ellipse-outline" size={14} color={theme.colors.borderStrong} />
               <Text variant="body" style={{ flex: 1 }} numberOfLines={1}>
                 {task.title}
               </Text>
+              <CompleteBox
+                title={task.title}
+                done={task.status === 'done'}
+                onToggle={() => onToggle(task.id)}
+              />
             </Pressable>
           ))}
         </View>

@@ -59,6 +59,13 @@ const COPY: Record<string, Copy> = {
     allow: 'Allow microphone',
     deny: 'Not now',
   },
+  camera: {
+    icon: 'camera-outline',
+    title: 'Take a photo for a task?',
+    body: 'The camera opens only when you ask for it, to attach a picture to a task — a receipt, a whiteboard, a serial number. The photo stays on this device with the task, the same as every attachment.',
+    allow: 'Allow camera',
+    deny: 'Not now',
+  },
   photos: {
     icon: 'image-outline',
     title: 'Photos need library access',

@@ -608,9 +608,13 @@ export function TaskDashboard() {
           <KanbanBoard tasks={visibleTasks} onOpen={handleOpen} onMove={handleMove} />
         ) : null}
 
-        {view === 'calendar' ? <CalendarAgenda tasks={visibleTasks} onOpen={handleOpen} /> : null}
+        {view === 'calendar' ? (
+          <CalendarAgenda tasks={visibleTasks} onOpen={handleOpen} onToggle={toggleTask} />
+        ) : null}
 
-        {view === 'matrix' ? <EisenhowerMatrix tasks={visibleTasks} onOpen={handleOpen} /> : null}
+        {view === 'matrix' ? (
+          <EisenhowerMatrix tasks={visibleTasks} onOpen={handleOpen} onToggle={toggleTask} />
+        ) : null}
       </ScrollView>
 
       {/* Expandable quick-add FAB */}

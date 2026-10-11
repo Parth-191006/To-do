@@ -1,11 +1,14 @@
 import * as Location from 'expo-location';
 import * as Notifications from 'expo-notifications';
 import * as TaskManager from 'expo-task-manager';
+import { Platform } from 'react-native';
 
 import type { TaskWithTags } from '@/domain/types';
 
+import { CATEGORY_PLACE } from './categories';
 import {
   createGeofenceSyncEngine,
+  geofenceChannelId,
   regionIdForTask,
   taskIdFromRegion,
   type GeofencePayload,
@@ -49,15 +52,28 @@ TaskManager.defineTask(GEOFENCE_TASK, async ({ data, error }) => {
   const entering = event.eventType === Location.GeofencingEventType.Enter;
   const verb = entering ? 'You are at' : 'You left';
 
+  // A place alert is the same reminder as a timed one, so it obeys the same
+  // urgency routing (`geofenceChannelId`, pure and tested in geofenceSync): a
+  // high or urgent fenced task gets the heads-up channel — and the bypassing
+  // one when the user opted in — everything else the default channel. Posting
+  // with no channel at all put every place alert on Android's own
+  // "Miscellaneous" channel: outside the four the Settings screen describes,
+  // and impossible for the user to tune. A `ChannelAwareTriggerInput` is how
+  // Expo delivers immediately *and* names a channel; `channelId` is
+  // Android-only, so elsewhere the trigger stays `null`.
+  const channelId = payload ? geofenceChannelId(payload.priority) : null;
+
   await Notifications.scheduleNotificationAsync({
     content: {
       title: payload?.title ?? 'Location reminder',
       body: payload ? `${verb} ${payload.label}` : 'You arrived at a saved place',
       sound: 'default',
+      categoryIdentifier: CATEGORY_PLACE,
       interruptionLevel: 'timeSensitive',
-      data: { taskId, kind: 'geofence' },
+      data: { taskId, kind: 'geofence', url: taskId ? `/task/${taskId}` : undefined },
     },
-    trigger: null, // deliver immediately
+    trigger:
+      channelId && Platform.OS === 'android' ? { channelId } : null, // deliver immediately
   });
 });
 

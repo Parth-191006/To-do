@@ -17,6 +17,7 @@ export type PermissionKind =
   | 'location'
   | 'backgroundLocation'
   | 'microphone'
+  | 'camera'
   | 'photos';
 
 interface PendingPrompt {

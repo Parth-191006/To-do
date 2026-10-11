@@ -25,7 +25,9 @@
  *    input re-arms after the OS state was wiped behind our back.
  */
 
-import type { TaskWithTags } from '@/domain/types';
+import type { Priority, TaskWithTags } from '@/domain/types';
+
+import { channelForPriority, DEFAULT_CHANNEL } from './channelPrefs';
 
 /** What the headless TaskManager handler needs to build the banner text. */
 export interface GeofencePayload {
@@ -33,6 +35,8 @@ export interface GeofencePayload {
   title: string;
   trigger: 'enter' | 'leave';
   label: string;
+  /** Carried so the banner can route to the task's urgency channel. */
+  priority: Priority;
 }
 
 /** One region as handed to `Location.startGeofencingAsync`. */
@@ -53,6 +57,20 @@ export interface GeofencePlan {
 /** Region identifiers embed the task id so the handler can look it back up. */
 export function regionIdForTask(taskId: string): string {
   return `taskflow:${taskId}`;
+}
+
+/**
+ * Which Android channel a place alert belongs on.
+ *
+ * Deliberately *the same* mapping timed reminders use: a fenced urgent task is
+ * exactly as urgent as a scheduled one, so it gets the heads-up channel (and
+ * the Do-Not-Disturb-bypassing one when the user opted in), and everything else
+ * the default channel. Lives here — in the module with no native imports —
+ * rather than in the TaskManager handler next door, so `npm run verify` can
+ * prove the routing instead of leaving it to a device.
+ */
+export function geofenceChannelId(priority: Priority | undefined): string {
+  return priority ? channelForPriority(priority) : DEFAULT_CHANNEL;
 }
 
 export function taskIdFromRegion(identifier: string): string | null {
@@ -82,9 +100,11 @@ export function activeGeofenceTasks(tasks: TaskWithTags[]): TaskWithTags[] {
  * Canonical string of the effective region set.
  *
  * Includes every field a registered region or its banner depends on — id,
- * trigger direction, coordinates, radius, label and task title — and is
- * sorted, so reordering the task list is a no-op while editing any fence
- * content (or completing a fenced task) changes it.
+ * trigger direction, coordinates, radius, label, task title *and priority*
+ * (the banner now routes to the task's urgency channel, so changing priority
+ * must re-arm the payload map) — and is sorted, so reordering the task list is
+ * a no-op while editing any fence content (or completing a fenced task)
+ * changes it.
  */
 export function signatureForTasks(tasks: TaskWithTags[]): string {
   return activeGeofenceTasks(tasks)
@@ -98,6 +118,7 @@ export function signatureForTasks(tasks: TaskWithTags[]): string {
         reminder.radius || 150,
         reminder.label,
         task.title,
+        task.priority,
       ].join(':');
     })
     .sort()
@@ -124,6 +145,7 @@ export function buildGeofencePlan(tasks: TaskWithTags[]): GeofencePlan {
       title: task.title,
       trigger: reminder.trigger,
       label: reminder.label,
+      priority: task.priority,
     });
   }
 

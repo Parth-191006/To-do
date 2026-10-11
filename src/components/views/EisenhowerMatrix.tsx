@@ -1,15 +1,20 @@
+import { Ionicons } from '@expo/vector-icons';
 import React, { useMemo } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import type { TaskWithTags } from '@/domain/types';
 import { eisenhowerQuadrants } from '@/store/selectors';
 import { useTheme } from '@/theme/ThemeProvider';
+import { toggleTaskLabel } from '@/utils/a11y';
+import { success } from '@/utils/haptics';
 
 import { Text } from '../ui';
 
 interface EisenhowerMatrixProps {
   tasks: TaskWithTags[];
   onOpen: (id: string) => void;
+  /** Completes (or re-opens) a task without leaving the matrix. */
+  onToggle: (id: string) => void;
 }
 
 /**
@@ -17,7 +22,7 @@ interface EisenhowerMatrixProps {
  * date, so no extra user input is required — the view is a lens over data the
  * user already provided.
  */
-export function EisenhowerMatrix({ tasks, onOpen }: EisenhowerMatrixProps) {
+export function EisenhowerMatrix({ tasks, onOpen, onToggle }: EisenhowerMatrixProps) {
   const theme = useTheme();
   const quadrants = useMemo(() => eisenhowerQuadrants(tasks), [tasks]);
 
@@ -84,21 +89,50 @@ export function EisenhowerMatrix({ tasks, onOpen }: EisenhowerMatrixProps) {
                   Empty
                 </Text>
               ) : (
-                cell.items.slice(0, 4).map((task) => (
-                  <Pressable
-                    key={task.id}
-                    onPress={() => onOpen(task.id)}
-                    accessibilityRole="button"
-                    // The cell's own heading and subtitle are read separately, so
-                    // the row announces which quadrant the task is in rather
-                    // than relying on the bullet it happens to be next to.
-                    accessibilityLabel={`${task.title}. ${cell.title} — ${cell.subtitle}. Opens the task.`}
-                  >
-                    <Text variant="caption" numberOfLines={2}>
-                      • {task.title}
-                    </Text>
-                  </Pressable>
-                ))
+                cell.items.slice(0, 4).map((task) => {
+                  const done = task.status === 'done';
+                  return (
+                    // Quadrants hold open tasks only (`isOpen`), so ticking a row
+                    // clears it out of the cell — the same "advance and move on"
+                    // feel as the board's arrow. Before this the matrix was
+                    // read-only: finishing something meant opening it.
+                    <View
+                      key={task.id}
+                      style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 6 }}
+                    >
+                      <Pressable
+                        hitSlop={8}
+                        onPress={() => {
+                          success();
+                          onToggle(task.id);
+                        }}
+                        accessibilityRole="checkbox"
+                        accessibilityState={{ checked: done }}
+                        accessibilityLabel={toggleTaskLabel(task.title, done)}
+                      >
+                        <Ionicons
+                          name={done ? 'checkmark-circle' : 'ellipse-outline'}
+                          size={14}
+                          color={done ? theme.colors.success : theme.colors.borderStrong}
+                        />
+                      </Pressable>
+                      <Pressable
+                        onPress={() => onOpen(task.id)}
+                        accessibilityRole="button"
+                        style={{ flex: 1 }}
+                        // The cell's own heading and subtitle are read
+                        // separately, so the row announces which quadrant the
+                        // task is in rather than relying on the checkbox it
+                        // happens to sit next to.
+                        accessibilityLabel={`${task.title}. ${cell.title} — ${cell.subtitle}. Opens the task.`}
+                      >
+                        <Text variant="caption" numberOfLines={2}>
+                          {task.title}
+                        </Text>
+                      </Pressable>
+                    </View>
+                  );
+                })
               )}
 
               {cell.items.length > 4 ? (

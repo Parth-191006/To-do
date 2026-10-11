@@ -97,6 +97,16 @@ export function TaskEditorSheet({ task, visible, onClose }: TaskEditorSheetProps
     if (!task) return;
     setBusy(true);
     try {
+      // Explain first: the OS location dialog is a one-shot resource, and the
+      // editor is where a place reminder is actually born. Without this, the
+      // first explanation a user saw arrived later, from the geofence sync —
+      // after the dialog had already been spent.
+      const { requestPermissionWithPrimer } = await import('@/store/usePermissionPrompt');
+      const explained = await requestPermissionWithPrimer('location');
+      if (!explained) {
+        warning();
+        return;
+      }
       const permission = await Location.requestForegroundPermissionsAsync();
       if (!permission.granted) {
         warning();

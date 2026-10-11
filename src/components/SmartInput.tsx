@@ -71,8 +71,10 @@ export function SmartInput({ onSubmit, label = 'Quick add', autoFocus = false, h
 
   const handlePickImage = useCallback(async (source: 'library' | 'camera' = 'library') => {
     tapLight();
-    // Explain first — the OS dialog only appears once per install.
-    const explained = await requestPermissionWithPrimer('photos');
+    // Explain first — the OS dialog only appears once per install, and the
+    // camera gets its own explanation rather than borrowing the photo
+    // library's: they are separate system permissions with separate denials.
+    const explained = await requestPermissionWithPrimer(source === 'camera' ? 'camera' : 'photos');
     if (!explained) return;
 
     if (source === 'camera') {
