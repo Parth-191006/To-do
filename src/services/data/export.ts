@@ -2,6 +2,7 @@
 // root, and the string-URI API under `/legacy`. The legacy surface is the one
 // that matches this module's needs (write a string, stat a path, get a
 // `documentDirectory`), and it is what `expo-sharing` expects a URI from.
+import Constants from 'expo-constants';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 
@@ -66,7 +67,7 @@ export async function buildBackup(): Promise<BackupBundle> {
   return {
     version: BACKUP_VERSION,
     exportedAt: nowIso(),
-    appVersion: '1.2.3',
+    appVersion: Constants.expoConfig?.version ?? '0.0.0',
     projects,
     tasks,
     tags,
