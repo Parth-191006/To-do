@@ -275,6 +275,7 @@ The teal rebrand.
 Initial private builds of the offline-first task manager: SQLite core,
 natural-language capture, the four views, notifications and the focus timer.
 
+[1.3.0]: https://github.com/Parth-191006/To-do/releases/tag/v1.3.0
 [1.2.4]: https://github.com/Parth-191006/To-do/releases/tag/v1.2.4
 [1.2.3]: https://github.com/Parth-191006/To-do/releases/tag/v1.2.3
 [1.2.2]: https://github.com/Parth-191006/To-do/releases/tag/v1.2.2
