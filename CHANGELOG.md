@@ -9,6 +9,31 @@ Release APKs are published for every `v*` tag:
 
 ## [Unreleased]
 
+## [1.3.0] — 2026-10-12
+
+A quieter interface, and the release guard that checks what users actually
+download. No schema change and no new permission: this updates over 1.2.4 in
+place, with local data intact.
+
+### Changed
+
+- **A quieter interface.** The screens that were doing the most talking now say
+  it in fewer words. Today opens with one progress ring and a single sentence
+  instead of a four-column stat grid, a progress bar and four uppercase labels;
+  the greeting *is* the header rather than a header plus a repeated greeting,
+  and the review card stays hidden on a day with nothing in it. Task metadata is
+  a middot-separated line ("Tomorrow 5:00 PM · #Work · High") rather than one
+  outlined chip per attribute, chips are flat tints instead of pills with a
+  border, and a panel now carries either a hairline or a shadow — never both,
+  via a two-step `elevation` scale in the tokens. The capture field lost its
+  `QUICK ADD` header and `DETECTED` label (the chips appear only once something
+  is parsed), keeps its syntax hint only while the field is empty, and the
+  gesture explainer under the list is gone. Tab subtitles are one line each.
+- **A three-step first-run tour** — the old version was four steps of paragraph
+  copy; it now says capture, four views and offline-only in one sentence each,
+  with the primary action as a centred pill and *Skip the tour* as a quiet text
+  button.
+
 ### Added
 
 - **A release guard** — [`verify-release.yml`](.github/workflows/verify-release.yml)
@@ -19,6 +44,10 @@ Release APKs are published for every `v*` tag:
   APK run, on demand and weekly, so damage from a deleted release, a truncated
   upload or a rotated key is caught later too. Both release assets must also be
   the same bytes as the download.
+- **`elevation` in the theme** — two shadow steps (`card`, `floating`) replace
+  the radius-and-opacity values each component used to invent, and
+  `ProgressBar`, `SectionLabel` and `Button` join the primitives in `ui.tsx` so
+  a screen never grows a fourth chip or button style.
 
 ## [1.2.4] — 2026-10-11
 

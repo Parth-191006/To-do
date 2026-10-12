@@ -138,7 +138,7 @@ export function HabitTracker({ onOpenAnalytics }: HabitTrackerProps) {
         <EmptyState
           icon="flame-outline"
           title="No habits yet"
-          subtitle="Tap a suggestion above, or type your own — streaks and a 5-week heatmap follow automatically."
+          subtitle="Streaks and a heatmap follow from the first check-in."
         />
       </View>
     );
@@ -159,7 +159,7 @@ export function HabitTracker({ onOpenAnalytics }: HabitTrackerProps) {
             key={habit.id}
             style={{
               backgroundColor: theme.colors.surface,
-              borderRadius: theme.radii.xl,
+              borderRadius: theme.radii.lg,
               borderWidth: StyleSheet.hairlineWidth,
               borderColor: theme.colors.border,
               padding: theme.spacing.lg,

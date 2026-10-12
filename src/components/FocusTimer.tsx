@@ -449,8 +449,8 @@ export function FocusTimer() {
         </View>
 
         {clock.phase === 'paused' ? (
-          <Text variant="micro" color={theme.colors.textTertiary}>
-            PAUSED — YOUR REMAINING TIME IS KEPT
+          <Text variant="caption" color={theme.colors.textTertiary}>
+            Paused
           </Text>
         ) : null}
       </View>
@@ -583,13 +583,17 @@ export function FocusTimer() {
             }}
           />
         </View>
+        {/*
+          One line, not a sentence with a second clause. How long breaks are
+          earned is a setting the user configures one screen away; here they
+          only need to know how much of today's goal is left.
+        */}
         <Text variant="caption" color={theme.colors.textSecondary}>
           {goalRatio >= 1
-            ? 'Daily goal reached — anything more is a bonus.'
-            : `${Math.max(0, dailyGoalMinutes - Math.round(focusToday / 60))} min to go. ` +
-              (nextBreakIsLong
-                ? `Round ${roundsCompleted + 1} earns a ${longBreakMinutes} min long break.`
-                : `Every ${longBreakEvery} rounds earns a ${longBreakMinutes} min long break.`)}
+            ? 'Daily goal reached'
+            : nextBreakIsLong
+              ? `${Math.max(0, dailyGoalMinutes - Math.round(focusToday / 60))} min to go · long break next`
+              : `${Math.max(0, dailyGoalMinutes - Math.round(focusToday / 60))} min to go`}
         </Text>
 
         {linkedTask && linkedTask.status !== 'done' ? (
@@ -608,9 +612,8 @@ export function FocusTimer() {
         ) : null}
       </View>
 
-      <Text variant="caption" color={theme.colors.textSecondary}>
-        Your block keeps running in the background — lock the screen or leave the app and a
-        notification tells you when the time is up.
+      <Text variant="caption" color={theme.colors.textTertiary} align="center">
+        Keeps running in the background.
       </Text>
 
       <TaskPickerSheet
@@ -810,9 +813,8 @@ function CustomLengthSheet({
           </View>
         </View>
 
-        <Text variant="caption" color={theme.colors.textSecondary}>
-          A block that reaches zero earns a long break every {longBreakEvery || '—'} rounds. Skipping
-          still banks the minutes you actually focused.
+        <Text variant="caption" color={theme.colors.textTertiary}>
+          Long break every {longBreakEvery || '—'} rounds. Skipping still banks your time.
         </Text>
       </View>
     </BottomSheet>

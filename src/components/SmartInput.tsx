@@ -30,9 +30,10 @@ interface SmartInputProps {
  * and sub-millisecond on realistic inputs), so the user watches the task take
  * shape — resolved date, time, tags, priority — before pressing enter.
  *
- * The field deliberately ships *empty*: an example sentence in the placeholder
- * read as pre-filled content and got in the way. Instead the card labels itself
- * and names each control, so nothing has to be guessed.
+ * The field carries a two-word placeholder rather than an example sentence: an
+ * example read as pre-filled content and got in the way, but an unlabelled box
+ * gave no clue what to do with it. The syntax itself is taught by the hint line
+ * under the field, which disappears the moment there is something to parse.
  */
 export function SmartInput({ onSubmit, label = 'Quick add', autoFocus = false, hint }: SmartInputProps) {
   const theme = useTheme();
@@ -180,33 +181,21 @@ export function SmartInput({ onSubmit, label = 'Quick add', autoFocus = false, h
         borderWidth: StyleSheet.hairlineWidth,
         borderColor: recording ? theme.colors.danger : theme.colors.border,
         paddingHorizontal: theme.spacing.lg,
-        paddingVertical: theme.spacing.md,
-        gap: theme.spacing.md,
-        shadowColor: theme.colors.shadow,
-        shadowOpacity: 0.12,
-        shadowRadius: 20,
-        shadowOffset: { width: 0, height: 10 },
-        elevation: 2,
+        paddingVertical: theme.spacing.sm,
+        gap: theme.spacing.sm,
       }}
     >
-      {/* What this card is for — so the empty field is never ambiguous. */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-        <Ionicons name="sparkles" size={13} color={theme.colors.accent} />
-        <Text variant="micro" color={theme.colors.accent}>
-          {label.toUpperCase()}
-        </Text>
-      </View>
-
       {/*
         Live parse preview — the heart of the smart input, and deliberately
         *above* the field: the chips are the answer to "did it understand me?",
         so they belong between the eye and the keyboard, not underneath it.
+
+        No "DETECTED" heading and no card label above it: the chips only appear
+        once the parser has matched something, so their presence already says
+        what they are.
       */}
       {parsed.tokens.length > 0 ? (
         <View style={{ gap: 6 }}>
-          <Text variant="micro" color={theme.colors.textTertiary}>
-            DETECTED
-          </Text>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
             {parsed.tokens.map((token) => (
               <Chip
@@ -225,9 +214,12 @@ export function SmartInput({ onSubmit, label = 'Quick add', autoFocus = false, h
         <TextInput
           value={value}
           onChangeText={setValue}
-          // Intentionally no placeholder: the card is already labelled.
-          // Stable handle for the Maestro flows: the visible header reads
-          // "QUICK ADD", so a text selector would be ambiguous.
+          // A two-word prompt, not an example sentence. An example in the
+          // placeholder read as pre-filled content and made the user delete it
+          // before typing; without *any* prompt the field was an unlabelled
+          // box, now that the card no longer carries a header of its own.
+          placeholder="Add a task…"
+          placeholderTextColor={theme.colors.textTertiary}
           testID="quick-add-input"
           autoFocus={autoFocus}
           multiline
@@ -269,8 +261,8 @@ export function SmartInput({ onSubmit, label = 'Quick add', autoFocus = false, h
           accessibilityLabel={hasContent ? 'Add task' : 'Add task — type something first'}
           accessibilityState={{ disabled: !hasContent || busy }}
           style={{
-            width: 44,
-            height: 44,
+            width: 40,
+            height: 40,
             alignItems: 'center',
             justifyContent: 'center',
             borderRadius: theme.radii.pill,
@@ -304,9 +296,19 @@ export function SmartInput({ onSubmit, label = 'Quick add', autoFocus = false, h
         </View>
       ) : null}
 
-      {statusNote ?? hint ? (
-        <Text variant="micro" color={theme.colors.textTertiary}>
-          {statusNote ?? hint}
+      {/*
+        The hint is only shown while the field is empty. As a permanent line it
+        was a paragraph of documentation sitting under the keyboard, read once
+        and then ignored forever; as the field's placeholder-state it teaches
+        at exactly the moment it is useful, and gets out of the way after that.
+      */}
+      {statusNote ? (
+        <Text variant="caption" color={theme.colors.textSecondary}>
+          {statusNote}
+        </Text>
+      ) : hint && !hasContent ? (
+        <Text variant="caption" color={theme.colors.textTertiary}>
+          {hint}
         </Text>
       ) : null}
     </View>
@@ -314,9 +316,10 @@ export function SmartInput({ onSubmit, label = 'Quick add', autoFocus = false, h
 }
 
 /**
- * Round icon button used for the capture extras. 44dp square with padding, so
- * it clears the 48dp touch target with `hitSlop` while staying inline with the
- * text field.
+ * Round icon button used for the capture extras: no background or border until
+ * it is active, so three of them in a row read as three quiet glyphs rather
+ * than three buttons. 40dp square plus `hitSlop` still clears the 48dp touch
+ * target.
  */
 function IconAction({
   icon,
@@ -330,7 +333,7 @@ function IconAction({
   active?: boolean;
 }) {
   const theme = useTheme();
-  const tint = active ? theme.colors.danger : theme.colors.textSecondary;
+  const tint = active ? theme.colors.danger : theme.colors.textTertiary;
   return (
     <Pressable
       onPress={onPress}
@@ -338,14 +341,12 @@ function IconAction({
       accessibilityRole="button"
       accessibilityLabel={label}
       style={{
-        width: 44,
-        height: 44,
+        width: 40,
+        height: 40,
         alignItems: 'center',
         justifyContent: 'center',
         borderRadius: theme.radii.pill,
-        backgroundColor: active ? theme.colors.dangerSoft : theme.colors.surfaceSunken,
-        borderWidth: StyleSheet.hairlineWidth,
-        borderColor: active ? theme.colors.danger : theme.colors.border,
+        backgroundColor: active ? theme.colors.dangerSoft : 'transparent',
       }}
     >
       <Ionicons name={icon} size={18} color={tint} />

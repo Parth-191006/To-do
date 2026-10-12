@@ -1,5 +1,4 @@
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import React, { useCallback, useRef } from 'react';
 
 import { BrandMark } from './BrandMark';
@@ -17,7 +16,7 @@ import {
 } from 'react-native';
 
 import { useTheme } from '@/theme/ThemeProvider';
-import type { TypographyToken } from '@/theme/tokens';
+import { elevation, type TypographyToken } from '@/theme/tokens';
 import { tapLight } from '@/utils/haptics';
 
 /* -------------------------------------------------------------------------- */
@@ -63,16 +62,14 @@ export function Card({ children, style, padded = true, elevated = false }: CardP
         {
           backgroundColor: elevated ? theme.colors.surfaceElevated : theme.colors.surface,
           borderRadius: theme.radii.xl,
-          borderWidth: 1,
+          // A panel gets a shadow *or* a border, never both. Two hairlines 8px
+          // apart is what made a list of panels read as a form.
+          borderWidth: elevated ? 0 : StyleSheet.hairlineWidth,
           borderColor: theme.colors.border,
           padding: padded ? theme.spacing.lg : 0,
-          // Cards carry a little weight even when not explicitly elevated — a
-          // hairline border alone on a flat background read as unfinished.
-          shadowColor: theme.colors.shadow,
-          shadowOpacity: elevated ? 0.22 : 0.1,
-          shadowRadius: elevated ? 22 : 12,
-          shadowOffset: { width: 0, height: elevated ? 10 : 5 },
-          elevation: elevated ? 4 : 1,
+          ...(elevated
+            ? { ...elevation.floating, shadowColor: theme.colors.shadow }
+            : { ...elevation.card, shadowColor: theme.colors.shadow }),
         },
         style,
       ]}
@@ -120,13 +117,15 @@ export function Chip({
         gap: 6,
         // 48dp is the Android touch-target floor; a compact chip is a visual
         // size, so the padding keeps the tappable box big enough either way.
-        minHeight: compact ? 32 : 34,
+        minHeight: compact ? 30 : 34,
         paddingVertical: compact ? 5 : 7,
         paddingHorizontal: compact ? 9 : 12,
         borderRadius: theme.radii.pill,
+        // Unselected chips are a flat tint with no outline. A pill with a
+        // border around it draws a box for information that is often just a
+        // word (a date, a tag) — six of them in a row is a wall of boxes.
         backgroundColor: selected ? background : theme.colors.surfaceSunken,
-        borderWidth: StyleSheet.hairlineWidth,
-        borderColor: selected ? accent : theme.colors.border,
+        borderWidth: 0,
       }}
     >
       {icon ? (
@@ -189,6 +188,150 @@ export function Divider({ inset = 0 }: { inset?: number }) {
 }
 
 /* -------------------------------------------------------------------------- */
+/*                                ProgressBar                                 */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The app's only linear progress indicator: a 4px track with a rounded fill.
+ * Used for the day's completion, subtask progress and habit strength.
+ */
+export function ProgressBar({
+  ratio,
+  color,
+  height = 4,
+}: {
+  ratio: number;
+  color?: string;
+  height?: number;
+}) {
+  const theme = useTheme();
+  const width = `${Math.round(clampRatio(ratio) * 100)}%` as `${number}%`;
+  return (
+    <View
+      accessibilityRole="progressbar"
+      style={{
+        height,
+        borderRadius: height / 2,
+        backgroundColor: theme.colors.surfaceSunken,
+        overflow: 'hidden',
+      }}
+    >
+      <View
+        style={{ width, height: '100%', backgroundColor: color ?? theme.colors.accent }}
+      />
+    </View>
+  );
+}
+
+function clampRatio(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.min(Math.max(value, 0), 1);
+}
+
+/* -------------------------------------------------------------------------- */
+/*                               SectionLabel                                 */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * A list section heading: a small colour dot, the name, and an optional count.
+ *
+ * Sentence case, not shouted caps, and the count stays plain text rather than
+ * becoming another pill — the heading is a waypoint in a list, not a control.
+ */
+export function SectionLabel({
+  label,
+  count,
+  tint,
+}: {
+  label: string;
+  count?: number;
+  tint?: string;
+}) {
+  const theme = useTheme();
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
+      <View
+        style={{
+          width: 6,
+          height: 6,
+          borderRadius: 3,
+          backgroundColor: tint ?? theme.colors.accent,
+        }}
+      />
+      <Text variant="caption" color={tint ?? theme.colors.textSecondary} style={{ fontWeight: '600' }}>
+        {label}
+      </Text>
+      {typeof count === 'number' ? (
+        <Text variant="caption" color={theme.colors.textTertiary}>
+          {count}
+        </Text>
+      ) : null}
+    </View>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/*                                  Button                                    */
+/* -------------------------------------------------------------------------- */
+
+interface ButtonProps {
+  label: string;
+  onPress: () => void;
+  icon?: keyof typeof Ionicons.glyphMap;
+  /** `primary` is the filled accent pill; `quiet` is the text-only escape hatch. */
+  variant?: 'primary' | 'quiet';
+  accessibilityLabel?: string;
+  testID?: string;
+}
+
+/** One button, two weights — so a screen never grows a third button style. */
+export function Button({
+  label,
+  onPress,
+  icon,
+  variant = 'primary',
+  accessibilityLabel,
+  testID,
+}: ButtonProps) {
+  const theme = useTheme();
+  const primary = variant === 'primary';
+
+  return (
+    <Pressable
+      onPress={onPress}
+      testID={testID}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel ?? label}
+      style={({ pressed }) => ({
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
+        minHeight: 48,
+        paddingHorizontal: primary ? theme.spacing.xl : theme.spacing.sm,
+        borderRadius: theme.radii.pill,
+        backgroundColor: primary ? theme.colors.accent : 'transparent',
+        opacity: pressed ? 0.85 : 1,
+      })}
+    >
+      {icon ? (
+        <Ionicons
+          name={icon}
+          size={17}
+          color={primary ? theme.colors.accentContrast : theme.colors.textSecondary}
+        />
+      ) : null}
+      <Text
+        variant="bodyStrong"
+        color={primary ? theme.colors.accentContrast : theme.colors.textSecondary}
+      >
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
 /*                                EmptyState                                  */
 /* -------------------------------------------------------------------------- */
 
@@ -220,27 +363,25 @@ export function EmptyState({
   const theme = useTheme();
   return (
     <View
-      style={{ alignItems: 'center', paddingVertical: theme.spacing['2xl'], gap: theme.spacing.sm }}
+      style={{ alignItems: 'center', paddingVertical: theme.spacing.xl, gap: theme.spacing.sm }}
     >
       {showMark ? (
         <View style={{ marginBottom: theme.spacing.xs }}>
-          <BrandMark size={72} />
+          <BrandMark size={56} />
           <View
             style={{
               position: 'absolute',
               right: -4,
               bottom: -4,
-              width: 26,
-              height: 26,
-              borderRadius: 13,
+              width: 24,
+              height: 24,
+              borderRadius: 12,
               alignItems: 'center',
               justifyContent: 'center',
               backgroundColor: theme.colors.surface,
-              borderWidth: 1,
-              borderColor: theme.colors.border,
             }}
           >
-            <Ionicons name={icon} size={14} color={theme.colors.textSecondary} />
+            <Ionicons name={icon} size={13} color={theme.colors.textSecondary} />
           </View>
         </View>
       ) : null}
@@ -248,11 +389,20 @@ export function EmptyState({
         {title}
       </Text>
       {subtitle ? (
-        <Text variant="caption" color={theme.colors.textSecondary} align="center" style={{ maxWidth: 280 }}>
+        <Text
+          variant="caption"
+          color={theme.colors.textSecondary}
+          align="center"
+          style={{ maxWidth: 260 }}
+        >
           {subtitle}
         </Text>
       ) : null}
-      {action ? <Chip label={action.label} selected onPress={action.onPress} /> : null}
+      {action ? (
+        <View style={{ marginTop: theme.spacing.xs }}>
+          <Button label={action.label} onPress={action.onPress} />
+        </View>
+      ) : null}
       {children}
     </View>
   );

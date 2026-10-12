@@ -95,35 +95,40 @@ export function ReviewCard() {
   const nothingPending =
     stats.open.length === 0 && stats.doneToday.length === 0 && stats.overdue.length === 0;
 
+  /**
+   * A day with nothing in it gets no card. The card used to greet an empty
+   * list with "Nothing is waiting — add the first thing you want to finish",
+   * directly above the capture field and the empty state saying the same
+   * thing in different words. Three voices, one message.
+   */
+  if (nothingPending) return null;
+
+  // One short line each. The card used to open with a sentence and a tally of
+  // up to four clauses, which is a status report in a place that only needs to
+  // say what the day looks like.
   const title =
     kind === 'morning'
       ? stats.open.length === 0
-        ? 'Plan your day'
-        : `Ready for today, ${stats.open.length === 1 ? 'one thing' : `${stats.open.length} things`} on the list`
+        ? 'Nothing queued'
+        : `${stats.open.length} open today`
       : stats.doneToday.length === 0
         ? 'Wrap up your day'
         : `${stats.doneToday.length} done today`;
 
   const body =
     kind === 'morning'
-      ? nothingPending
-        ? 'Nothing is waiting — add the first thing you want to finish today.'
-        : [
-            stats.overdue.length > 0 ? `${stats.overdue.length} overdue` : null,
-            stats.dueToday.length > 0 ? `${stats.dueToday.length} due today` : null,
-            stats.dueToday.length === 0 && stats.overdue.length === 0
-              ? 'nothing has a deadline'
-              : null,
-            nextUp ? `start with “${nextUp.title}”` : null,
-          ]
-            .filter(Boolean)
-            .join(' · ')
+      ? [
+          stats.overdue.length > 0 ? `${stats.overdue.length} overdue` : null,
+          stats.dueToday.length > 0 ? `${stats.dueToday.length} due today` : null,
+          nextUp ? `next: “${nextUp.title}”` : null,
+        ]
+          .filter(Boolean)
+          .join(' · ')
       : [
           `${stats.open.length} still open`,
           weeklyGoalTasks > 0
             ? `${stats.doneThisWeek} of ${weeklyGoalTasks} this week`
-            : `${stats.doneThisWeek} finished this week`,
-          stats.overdue.length > 0 ? `${stats.overdue.length} slipped past their date` : null,
+            : `${stats.doneThisWeek} done this week`,
         ]
           .filter(Boolean)
           .join(' · ');
@@ -133,7 +138,7 @@ export function ReviewCard() {
       style={{
         gap: theme.spacing.sm,
         backgroundColor: theme.colors.accentSoft,
-        borderRadius: theme.radii.xl,
+        borderRadius: theme.radii.lg,
         padding: theme.spacing.lg,
       }}
     >
@@ -146,9 +151,6 @@ export function ReviewCard() {
         <Text variant="bodyStrong" color={theme.colors.accent} style={{ flex: 1 }}>
           {title}
         </Text>
-        <Text variant="micro" color={theme.colors.accent}>
-          {kind === 'morning' ? 'MORNING PLAN' : 'EVENING REVIEW'}
-        </Text>
       </View>
 
       <Text variant="caption" color={theme.colors.textSecondary}>
@@ -158,7 +160,7 @@ export function ReviewCard() {
       <View style={{ flexDirection: 'row', gap: theme.spacing.sm, flexWrap: 'wrap' }}>
         {kind === 'evening' && stats.dueToday.length + stats.overdue.length > 0 ? (
           <Chip
-            label="Move unfinished to tomorrow"
+            label="Push to tomorrow"
             icon="arrow-forward-circle-outline"
             selected
             accessibilityLabel="Move everything due today or overdue to tomorrow morning"
@@ -166,7 +168,7 @@ export function ReviewCard() {
           />
         ) : null}
         <Chip
-          label={kind === 'morning' ? 'Got it' : 'Done reviewing'}
+          label={kind === 'morning' ? 'Got it' : 'Done'}
           accessibilityLabel="Dismiss this review card"
           onPress={() => {
             selection();

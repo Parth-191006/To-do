@@ -11,6 +11,7 @@ import { TaskDashboard } from '@/components/TaskDashboard';
 import { Text } from '@/components/ui';
 import { useStore } from '@/store/useStore';
 import { useTheme } from '@/theme/ThemeProvider';
+import { greeting } from '@/utils/greeting';
 
 export default function TodayScreen() {
   const theme = useTheme();
@@ -23,22 +24,31 @@ export default function TodayScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
-      {/* The mascot leads the header, matching the launcher icon. */}
+      {/*
+        The header *is* the greeting. It used to read "TaskFlow" with a greeting
+        repeated immediately underneath inside the dashboard — two headings, four
+        words, for one idea.
+      */}
       <TabHeader
-        title="TaskFlow"
+        title={greeting()}
+        subtitle={new Date().toLocaleDateString(undefined, {
+          weekday: 'long',
+          day: 'numeric',
+          month: 'long',
+        })}
         right={
           <Pressable
             onPress={() => router.push('/settings')}
             accessibilityLabel={t('today.openSettings')}
             accessibilityRole="button"
             style={{
-              width: 48,
-              height: 48,
+              width: 44,
+              height: 44,
               alignItems: 'center',
               justifyContent: 'center',
             }}
           >
-            <Ionicons name="options-outline" size={21} color={theme.colors.textSecondary} />
+            <Ionicons name="options-outline" size={20} color={theme.colors.textTertiary} />
           </Pressable>
         }
       />
@@ -103,7 +113,7 @@ function OpeningWorkspace() {
             shadowOffset: { width: 0, height: 12 },
           }}
         >
-          <BrandMark size={72} />
+          <BrandMark size={56} />
         </Animated.View>
         <Text variant="caption" color={theme.colors.textSecondary}>
           {t('today.opening')}

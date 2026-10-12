@@ -12,7 +12,13 @@
  *   recognisable identity in both themes instead of a flat fill.
  * - Surfaces step up in three tiers (sunken → surface → elevated) with a
  *   subtle teal tint in both themes, so cards read as cards rather than mush
- *   and the neutrals belong to the same family as the accent.
+ *   and the neutrals belong to the same family as the accent. Every step is
+ *   deliberately *small*: a screen should read as one calm surface with a few
+ *   soft panels on it, not as a stack of outlined boxes.
+ * - Chrome is rationed. A panel gets either a hairline border or a soft
+ *   shadow, never both, and a row of metadata gets plain text with ` · `
+ *   separators instead of a pill per attribute. That is the difference between
+ *   a screen you scan and one you have to read.
  * - Dark-mode `accentContrast` flips to a near-black teal: selected chips and
  *   the FAB render dark-on-bright, which keeps >7:1 contrast where white on a
  *   bright teal accent would have failed.
@@ -145,6 +151,34 @@ export const spacing = {
   '3xl': 48,
 } as const;
 
+/**
+ * One elevation, used everywhere.
+ *
+ * Cards, sheets and the FAB all used to invent their own shadow radius and
+ * opacity, which is why the screen looked busy even when it was empty. Two
+ * steps — a resting panel and a floating control — is enough, and `hairline`
+ * lets the components that own a border keep it instead of adding a shadow on
+ * top of it.
+ */
+export const elevation = {
+  /** Resting content: you should feel it, not see it. */
+  card: {
+    shadowColor: 'rgba(14, 47, 43, 0.16)',
+    shadowOpacity: 0.06,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 1,
+  },
+  /** Anything that floats above the page: sheets, the FAB, the undo strip. */
+  floating: {
+    shadowColor: 'rgba(14, 47, 43, 0.32)',
+    shadowOpacity: 0.16,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 5,
+  },
+} as const;
+
 export const radii = {
   sm: 8,
   md: 12,
@@ -196,13 +230,13 @@ export interface ThemeColors {
 }
 
 export const lightColors: ThemeColors = {
-  background: '#F4F8F7',
-  backgroundAlt: '#EAF2F0',
+  background: '#F6F9F8',
+  backgroundAlt: '#EDF3F2',
   surface: palette.white,
   surfaceElevated: palette.white,
-  surfaceSunken: '#EDF3F2',
-  border: '#E2ECEA',
-  borderStrong: '#C7D7D4',
+  surfaceSunken: '#F0F5F4',
+  border: '#E6EDEC',
+  borderStrong: '#C9D8D6',
   textPrimary: '#111827',
   textSecondary: '#4B5566',
   // Tertiary sits on white and near-white surfaces, so it has to clear 4.5:1
@@ -301,14 +335,17 @@ export const darkColors: ThemeColors = {
  * it was raised to 11 px with a little more tracking instead of staying tiny.
  */
 export const typography = {
-  display: { fontSize: 32, fontWeight: '800' as const, letterSpacing: -0.8 },
-  title: { fontSize: 22, fontWeight: '700' as const, letterSpacing: -0.4 },
-  heading: { fontSize: 17, fontWeight: '700' as const, letterSpacing: -0.2 },
+  display: { fontSize: 34, fontWeight: '800' as const, letterSpacing: -1 },
+  title: { fontSize: 22, fontWeight: '700' as const, letterSpacing: -0.5 },
+  heading: { fontSize: 16.5, fontWeight: '700' as const, letterSpacing: -0.2 },
   body: { fontSize: 15, fontWeight: '500' as const, letterSpacing: -0.1 },
-  bodyStrong: { fontSize: 15, fontWeight: '700' as const, letterSpacing: -0.1 },
+  bodyStrong: { fontSize: 15, fontWeight: '600' as const, letterSpacing: -0.1 },
   label: { fontSize: 14, fontWeight: '600' as const },
   caption: { fontSize: 12.5, fontWeight: '500' as const },
-  micro: { fontSize: 11, fontWeight: '700' as const, letterSpacing: 0.8 },
+  // The all-caps workhorse. Tracking is tighter than it was: 0.8px at 11px
+  // made short labels read as a headline of their own, which is one of the
+  // reasons the old screens felt louder than they were.
+  micro: { fontSize: 11, fontWeight: '600' as const, letterSpacing: 0.4 },
 } as const;
 
 export type TypographyToken = keyof typeof typography;

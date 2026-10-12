@@ -13,12 +13,13 @@ import type { Priority, TaskWithTags } from '@/domain/types';
 import { describeRecurrence } from '@/nlp/parser';
 import { subtaskProgress } from '@/store/selectors';
 import { useTheme } from '@/theme/ThemeProvider';
-import { toggleTaskLabel } from '@/utils/a11y';
+import { elevation } from '@/theme/tokens';
+import { describeTask, toggleTaskLabel } from '@/utils/a11y';
 import { success } from '@/utils/haptics';
 import { clamp } from '@/utils/id';
 
 import { Confetti, type ConfettiHandle } from './Confetti';
-import { Chip, Text } from './ui';
+import { ProgressBar, Text } from './ui';
 
 const SWIPE_THRESHOLD = 96;
 const MAX_SWIPE = 132;
@@ -76,6 +77,48 @@ export function TaskCard({
   const overdue = isTaskOverdue(task);
   const dueLabel = formatDueLabel(task.dueAt);
   const priorityColor = theme.colors.priority[task.priority];
+
+  /**
+   * The card's metadata as words, not as a row of pills.
+   *
+   * Every attribute used to be its own outlined chip with an icon, so a task
+   * with a date, a repeat, a priority and subtasks put four boxes under one
+   * line of text. Same information, separated by a middot, reads in a glance
+   * instead of needing to be scanned — and there is nothing to decode.
+   */
+  const meta = useMemo(() => {
+    const parts: { key: string; text: string; color?: string }[] = [];
+    if (dueLabel) {
+      parts.push({
+        key: 'due',
+        text: dueLabel,
+        color: overdue ? theme.colors.danger : undefined,
+      });
+    }
+    if (task.recurrence) {
+      parts.push({ key: 'repeat', text: describeRecurrence(task.recurrence) });
+    }
+    if (task.priority !== 'none') {
+      parts.push({ key: 'priority', text: PRIORITY_LABEL[task.priority], color: priorityColor });
+    }
+    if (task.estimateMinutes) {
+      parts.push({ key: 'estimate', text: `~${task.estimateMinutes}m` });
+    }
+    if (progress.total > 0) {
+      parts.push({ key: 'steps', text: `${progress.done}/${progress.total}` });
+    }
+    return parts;
+  }, [
+    dueLabel,
+    overdue,
+    priorityColor,
+    progress.done,
+    progress.total,
+    task.estimateMinutes,
+    task.priority,
+    task.recurrence,
+    theme.colors.danger,
+  ]);
 
   const complete = useCallback(() => {
     success();
@@ -158,52 +201,52 @@ export function TaskCard({
             : done
               ? theme.colors.surfaceSunken
               : theme.colors.surface,
-          borderRadius: theme.radii.xl,
-          borderWidth: selected ? 2 : 1,
+          borderRadius: theme.radii.lg,
+          // Hairline by default; the accent border is the only state that
+          // widens, so selection is unmistakable without every card wearing a
+          // box. Overdue keeps a red hairline — the colour carries the warning.
+          borderWidth: selected ? 1.5 : StyleSheet.hairlineWidth,
           borderColor: selected
             ? theme.colors.accent
             : overdue
               ? theme.colors.danger
               : theme.colors.border,
           overflow: 'hidden',
-          shadowColor: theme.colors.shadow,
-          shadowOpacity: done ? 0 : 0.08,
-          shadowRadius: 10,
-          shadowOffset: { width: 0, height: 4 },
-          elevation: done ? 0 : 1,
+          ...(done ? null : { ...elevation.card, shadowColor: theme.colors.shadow }),
         }}
       >
         <Pressable
           onPress={() => onPress(task.id)}
           onLongPress={onBreakDown ? () => onBreakDown(task.id) : undefined}
           accessibilityRole="button"
+          // The card is one big target, so it names the task it opens —
+          // otherwise a screen reader reads the row's fragments in sequence
+          // with nothing tying them together.
+          accessibilityLabel={describeTask({
+            title: task.title,
+            priority: task.priority,
+            done,
+          })}
           style={{ flexDirection: 'row', alignItems: 'stretch' }}
         >
-          {/* Priority stripe */}
-          <View
-            style={{
-              width: 5,
-              backgroundColor:
-                task.priority === 'none'
-                  ? theme.colors.border
-                  : theme.colors.prioritySoft[task.priority],
-              borderRightWidth: task.priority === 'none' ? 0 : 1,
-              borderRightColor: theme.colors.border,
-            }}
-          >
+          {/*
+            Priority stripe — only when there *is* a priority. An unprioritised
+            task used to carry a grey bar down its left edge, which is a
+            graphic for "nothing here".
+          */}
+          {task.priority !== 'none' ? (
             <View
               style={{
-                width: 5,
-                height: 26,
-                marginTop: theme.spacing.md,
-                backgroundColor: task.priority === 'none' ? theme.colors.border : priorityColor,
-                borderTopRightRadius: 4,
-                borderBottomRightRadius: 4,
+                width: 3,
+                marginVertical: theme.spacing.md,
+                marginLeft: 2,
+                borderRadius: 2,
+                backgroundColor: priorityColor,
               }}
             />
-          </View>
+          ) : null}
 
-          <View style={{ flex: 1, paddingVertical: theme.spacing.md, paddingHorizontal: theme.spacing.md, gap: 6 }}>
+          <View style={{ flex: 1, paddingVertical: theme.spacing.md, paddingHorizontal: theme.spacing.md, gap: 5 }}>
             <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: theme.spacing.sm }}>
               <Pressable
                 onPress={complete}
@@ -229,73 +272,36 @@ export function TaskCard({
                   {task.title}
                 </Text>
 
-                {(dueLabel || task.recurrence || progress.total > 0 || task.tagIds.length > 0) && (
-                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
-                    {dueLabel ? (
-                      <Chip
-                        label={dueLabel}
-                        compact
-                        icon={overdue ? 'alert-circle-outline' : 'calendar-outline'}
-                        color={overdue ? theme.colors.danger : theme.colors.textSecondary}
-                      />
-                    ) : null}
-                    {task.recurrence ? (
-                      <Chip
-                        label={describeRecurrence(task.recurrence)}
-                        compact
-                        icon="repeat-outline"
-                        color={theme.swatches[5]}
-                      />
-                    ) : null}
-                    {task.priority !== 'none' ? (
-                      <Chip
-                        label={PRIORITY_LABEL[task.priority]}
-                        compact
-                        icon="flag-outline"
-                        color={priorityColor}
-                      />
-                    ) : null}
-                    {progress.total > 0 ? (
-                      <Chip
-                        label={`${progress.done}/${progress.total}`}
-                        compact
-                        icon="git-branch-outline"
-                        color={theme.colors.textSecondary}
-                      />
-                    ) : null}
+                {meta.length > 0 ? (
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center' }}>
+                    {meta.map((part, index) => (
+                      <View
+                        key={part.key}
+                        style={{ flexDirection: 'row', alignItems: 'center' }}
+                      >
+                        {index > 0 ? (
+                          <Text variant="caption" color={theme.colors.textTertiary}>
+                            {' · '}
+                          </Text>
+                        ) : null}
+                        <Text
+                          variant="caption"
+                          color={part.color ?? theme.colors.textTertiary}
+                          numberOfLines={1}
+                        >
+                          {part.text}
+                        </Text>
+                      </View>
+                    ))}
                   </View>
-                )}
+                ) : null}
               </View>
 
               <Confetti ref={confettiRef} />
             </View>
 
-            {task.estimateMinutes ? (
-              <Chip
-                label={`~${task.estimateMinutes}m`}
-                compact
-                icon="hourglass-outline"
-                color={theme.colors.textSecondary}
-              />
-            ) : null}
-
             {progress.total > 0 ? (
-              <View
-                style={{
-                  height: 3,
-                  borderRadius: 2,
-                  backgroundColor: theme.colors.surfaceSunken,
-                  overflow: 'hidden',
-                }}
-              >
-                <View
-                  style={{
-                    width: `${Math.round(progress.ratio * 100)}%`,
-                    height: '100%',
-                    backgroundColor: theme.colors.success,
-                  }}
-                />
-              </View>
+              <ProgressBar ratio={progress.ratio} color={theme.colors.success} height={3} />
             ) : null}
           </View>
         </Pressable>

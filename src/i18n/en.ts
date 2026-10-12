@@ -30,10 +30,10 @@ export const en = {
 
   /* --------------------------------------------------------------- Today */
   'today.openSettings': 'Open settings',
-  'today.opening': 'Opening your workspace…',
+  'today.opening': 'Opening…',
 
   /* --------------------------------------------------------------- Inbox */
-  'inbox.subtitle': 'Search, filter and bulk-edit everything you have captured.',
+  'inbox.subtitle': 'Everything you have captured.',
   'inbox.filterAll': 'All',
   'inbox.filterOpen': 'Open',
   'inbox.filterOverdue': 'Overdue',
@@ -43,12 +43,12 @@ export const en = {
   'inbox.cancelSelection': 'Cancel selection',
   'inbox.selectMultiple': 'Select multiple tasks',
   'inbox.select': 'Select',
-  'inbox.searchPlaceholder': 'Search tasks and notes',
+  'inbox.searchPlaceholder': 'Search',
   'inbox.clearSearch': 'Clear search',
   'inbox.emptyNoMatches': 'No matches',
   'inbox.emptyNothingHere': 'Nothing here',
   'inbox.emptyNoMatchesBody': 'Nothing matches “{query}”. Try another word, or a different filter.',
-  'inbox.emptyBody': 'Try another filter, or add something from the Today tab.',
+  'inbox.emptyBody': 'Try another filter, or add something from Today.',
   'inbox.goToToday': 'Go to Today',
   'inbox.selectTask': 'Select {title}',
   'inbox.bulkComplete': 'Complete',
@@ -108,13 +108,13 @@ export const en = {
   'join.openSettingsA11y': 'Open the Settings screen',
 
   /* --------------------------------------------------------------- Focus */
-  'focus.subtitle': 'Pomodoro blocks linked to the task you are working on.',
+  'focus.subtitle': 'Pomodoro blocks tied to a task.',
 
   /* -------------------------------------------------------------- Habits */
-  'habits.subtitle': 'Daily check-ins, streaks and a 5-week heatmap.',
+  'habits.subtitle': 'Streaks and a five-week heatmap.',
 
   /* ------------------------------------------------------------ Insights */
-  'insights.subtitle': 'Where your time and completions actually go.',
+  'insights.subtitle': 'Where your time goes.',
   'insights.rangeDays': '{days} DAYS',
 
   /* ------------------------------------------------------------ Settings */

@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import React, { useState } from 'react';
-import { View } from 'react-native';
+import { Pressable, View } from 'react-native';
 
 import { TOUR_STEPS, formatStepLabel, primaryActionLabel } from '@/domain/tour';
 import { usePreferences } from '@/store/usePreferences';
@@ -8,7 +8,7 @@ import { useTheme } from '@/theme/ThemeProvider';
 import { selection } from '@/utils/haptics';
 
 import { BrandMark } from './BrandMark';
-import { Chip, Text } from './ui';
+import { Button, Text } from './ui';
 
 /**
  * The first-install overview.
@@ -21,6 +21,11 @@ import { Chip, Text } from './ui';
  * It renders over the navigator rather than as a route, so it cannot be swiped
  * away into a half-configured app, and it is dismissible from the first step:
  * a tour you cannot skip is an advertisement.
+ *
+ * Laid out as three quiet blocks — mark, message, controls — with the copy
+ * centred and nothing else on screen. The previous version stacked a step
+ * counter, an icon badge, a display title, a paragraph and an all-caps footer
+ * sentence, which is a lot of furniture for one sentence of content.
  */
 export function OnboardingTour() {
   const theme = useTheme();
@@ -46,25 +51,25 @@ export function OnboardingTour() {
         backgroundColor: theme.colors.background,
         paddingTop: theme.spacing['2xl'],
         paddingBottom: theme.spacing.xl,
-        paddingHorizontal: theme.spacing.lg,
+        paddingHorizontal: theme.spacing.xl,
         justifyContent: 'space-between',
       }}
       accessibilityViewIsModal
       accessibilityLabel="TaskFlow overview"
     >
-      <View style={{ alignItems: 'center', gap: theme.spacing.sm }}>
-        <BrandMark size={44} />
-        <Text variant="micro" color={theme.colors.textTertiary}>
-          {formatStepLabel(index).toUpperCase()}
+      <View style={{ alignItems: 'center', gap: theme.spacing.md }}>
+        <BrandMark size={48} bare />
+        <Text variant="caption" color={theme.colors.textTertiary}>
+          {formatStepLabel(index)}
         </Text>
       </View>
 
-      <View style={{ gap: theme.spacing.lg }}>
+      <View style={{ alignItems: 'center', gap: theme.spacing.lg }}>
         <View
           style={{
-            width: 56,
-            height: 56,
-            borderRadius: 28,
+            width: 52,
+            height: 52,
+            borderRadius: 26,
             alignItems: 'center',
             justifyContent: 'center',
             backgroundColor: theme.colors.accentSoft,
@@ -72,45 +77,71 @@ export function OnboardingTour() {
         >
           <Ionicons
             name={step.icon as keyof typeof Ionicons.glyphMap}
-            size={26}
+            size={24}
             color={theme.colors.accent}
           />
         </View>
-        <Text variant="display">{step.title}</Text>
-        <Text variant="body" color={theme.colors.textSecondary}>
+        <Text variant="display" align="center">
+          {step.title}
+        </Text>
+        <Text variant="body" color={theme.colors.textSecondary} align="center">
           {step.body}
         </Text>
       </View>
 
-      <View style={{ gap: theme.spacing.md }}>
-        <View style={{ flexDirection: 'row', gap: 6 }}>
+      <View style={{ alignItems: 'center', gap: theme.spacing.lg }}>
+        <View style={{ flexDirection: 'row', gap: 6 }} accessibilityRole="progressbar">
           {TOUR_STEPS.map((entry, dot) => (
             <View
               key={entry.id}
               style={{
-                width: dot === index ? 22 : 8,
-                height: 8,
+                width: dot === index ? 20 : 7,
+                height: 7,
                 borderRadius: 4,
-                backgroundColor: dot === index ? theme.colors.accent : theme.colors.borderStrong,
+                backgroundColor:
+                  dot === index ? theme.colors.accent : theme.colors.borderStrong,
               }}
             />
           ))}
         </View>
 
-        <View style={{ flexDirection: 'row', gap: theme.spacing.sm, flexWrap: 'wrap' }}>
-          <Chip
+        {/*
+          The primary action is a centred pill rather than a full-bleed bar: at
+          full width it reads as a system banner pinned to the bottom of the
+          screen, and the tour is not a dialog that needs dismissing.
+        */}
+        <View style={{ width: '100%', maxWidth: 340, alignSelf: 'center', gap: theme.spacing.xs }}>
+          <Button
             label={primaryActionLabel(index)}
-            icon={isLast ? 'checkmark-circle-outline' : 'arrow-forward-outline'}
-            selected
-            accessibilityLabel={primaryActionLabel(index)}
-            onPress={() => (isLast ? finish() : setIndex((next) => next + 1))}
+            icon={isLast ? 'checkmark' : 'arrow-forward'}
+            onPress={() => {
+              if (isLast) finish();
+              else {
+                selection();
+                setIndex((next) => next + 1);
+              }
+            }}
           />
-          <Chip label="Skip the tour" accessibilityLabel="Skip the tour" onPress={finish} />
+          {/*
+            Skip is reachable from the first step and is a quiet text button, not
+            a second pill competing with the primary action. It disappears on the
+            last step, where the primary button already means "leave the tour".
+            The Maestro flows address it by this label.
+          */}
+          {isLast ? null : (
+            <Pressable
+              onPress={finish}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Skip the tour"
+              style={{ minHeight: 44, alignItems: 'center', justifyContent: 'center' }}
+            >
+              <Text variant="caption" color={theme.colors.textTertiary}>
+                Skip the tour
+              </Text>
+            </Pressable>
+          )}
         </View>
-
-        <Text variant="micro" color={theme.colors.textTertiary}>
-          REOPEN IT ANY TIME FROM SETTINGS → TASKFLOW. NOTHING HERE IS A ONE-TIME CHOICE.
-        </Text>
       </View>
     </View>
   );

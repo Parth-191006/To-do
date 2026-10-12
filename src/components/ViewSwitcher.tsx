@@ -6,8 +6,6 @@ import type { TaskView } from '@/domain/types';
 import { useTheme } from '@/theme/ThemeProvider';
 import { selection } from '@/utils/haptics';
 
-import { Text } from './ui';
-
 const VIEWS: { key: TaskView; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
   { key: 'list', label: 'List', icon: 'list-outline' },
   { key: 'kanban', label: 'Board', icon: 'albums-outline' },
@@ -23,18 +21,16 @@ interface ViewSwitcherProps {
 /**
  * Compact icon-only segmented control that swaps the four task layouts.
  *
- * The previous version spelled out LIST / BOARD / AGENDA / MATRIX in uppercase
- * at 10 px, which cost a full 44 px row on the Today screen and pushed the first
- * task below the fold on a small phone. The label of the *active* view is kept
- * as a caption next to it, so the setting is still named — and every icon
- * carries its name for TalkBack.
+ * Icon-only, with no caption naming the current view: the selected segment is
+ * already a filled chip under the finger, and the word beside it ("LIST") was
+ * a third way of saying what the highlight says. Every icon keeps its name for
+ * TalkBack.
  */
 export function ViewSwitcher({ value, onChange }: ViewSwitcherProps) {
   const theme = useTheme();
-  const active = VIEWS.find((view) => view.key === value) ?? VIEWS[0];
 
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm }}>
+    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
       <View
         style={{
           flexDirection: 'row',
@@ -58,21 +54,12 @@ export function ViewSwitcher({ value, onChange }: ViewSwitcherProps) {
               accessibilityLabel={`${view.label} view`}
               accessibilityState={{ selected }}
               style={{
-                width: 44,
-                height: 36,
+                width: 42,
+                height: 34,
                 alignItems: 'center',
                 justifyContent: 'center',
                 borderRadius: theme.radii.pill,
                 backgroundColor: selected ? theme.colors.surface : 'transparent',
-                ...(selected
-                  ? {
-                      shadowColor: theme.colors.shadow,
-                      shadowOpacity: 0.16,
-                      shadowRadius: 6,
-                      shadowOffset: { width: 0, height: 2 },
-                      elevation: 1,
-                    }
-                  : null),
               }}
             >
               <Ionicons
@@ -84,9 +71,6 @@ export function ViewSwitcher({ value, onChange }: ViewSwitcherProps) {
           );
         })}
       </View>
-      <Text variant="micro" color={theme.colors.textTertiary} numberOfLines={1}>
-        {active.label.toUpperCase()}
-      </Text>
     </View>
   );
 }

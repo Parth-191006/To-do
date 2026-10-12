@@ -21,6 +21,10 @@ interface TabHeaderProps {
  * spacing.lg`. The result was four different top paddings and two different
  * title sizes, which read as four different apps. This fixes the padding, the
  * type scale and the spacing in one place.
+ *
+ * A subtitle is one line, and a screen that can say what it is in its title
+ * does not get one at all — every tab used to explain itself in a sentence
+ * before showing anything.
  */
 export function TabHeader({ title, subtitle, right }: TabHeaderProps) {
   const theme = useTheme();
@@ -31,7 +35,7 @@ export function TabHeader({ title, subtitle, right }: TabHeaderProps) {
       style={{
         paddingTop: insets.top + theme.spacing.sm,
         paddingHorizontal: theme.spacing.lg,
-        paddingBottom: theme.spacing.sm,
+        paddingBottom: theme.spacing.md,
         gap: 2,
       }}
     >
@@ -42,7 +46,7 @@ export function TabHeader({ title, subtitle, right }: TabHeaderProps) {
         {right}
       </View>
       {subtitle ? (
-        <Text variant="caption" color={theme.colors.textSecondary} numberOfLines={2}>
+        <Text variant="caption" color={theme.colors.textTertiary} numberOfLines={1}>
           {subtitle}
         </Text>
       ) : null}

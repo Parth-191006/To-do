@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Animated, Pressable, ScrollView, View } from 'react-native';
 
 import type { TaskStatus, TaskWithTags } from '@/domain/types';
 import {
@@ -12,41 +12,59 @@ import {
   isOverdue,
   sortByUrgency,
   summarizeDay,
+  type DaySummary,
 } from '@/store/selectors';
 import { useStore } from '@/store/useStore';
 import { useTheme } from '@/theme/ThemeProvider';
+import { elevation } from '@/theme/tokens';
 import { selection, success, tapHeavy, tapLight } from '@/utils/haptics';
 
 import { usePreferences } from '@/store/usePreferences';
 
 import { Confetti, type ConfettiHandle } from './Confetti';
+import { ProgressRing } from './ProgressRing';
 import { ProjectSheet } from './ProjectSheet';
 import { ReviewCard } from './ReviewCard';
 import { SmartInput } from './SmartInput';
 import { TaskCard } from './TaskCard';
 import { ViewSwitcher } from './ViewSwitcher';
-import { Chip, EmptyState, ScalePress, Text } from './ui';
+import { Chip, EmptyState, ScalePress, SectionLabel, Text } from './ui';
 import { CalendarAgenda } from './views/CalendarAgenda';
 import { EisenhowerMatrix } from './views/EisenhowerMatrix';
 import { KanbanBoard } from './views/KanbanBoard';
 
-function greeting(now = new Date()): string {
-  const hour = now.getHours();
-  if (hour < 12) return 'Good morning';
-  if (hour < 18) return 'Good afternoon';
-  return 'Good evening';
-}
-
 /**
  * Examples that teach the capture syntax by doing it. Tapping one adds it, so
- * "how does the natural-language input work?" is answered by the empty state
- * itself rather than by a paragraph of instructions.
+ * "how does the natural-language input work?" is answered by three tappable
+ * lines rather than a paragraph of instructions.
  */
 const EXAMPLES: { label: string; value: string; icon: keyof typeof Ionicons.glyphMap }[] = [
   { label: 'Review designs tomorrow 4pm', value: 'Review designs tomorrow 4pm #work !high ~45m', icon: 'calendar-outline' },
   { label: 'Call the dentist every month', value: 'Call the dentist every month !medium', icon: 'repeat-outline' },
   { label: 'Buy milk when I reach the shop', value: 'Buy groceries tomorrow 6pm #errands ~30m', icon: 'pricetags-outline' },
 ];
+
+/**
+ * The one sentence the day's ring is illustrating. Kept short on purpose: the
+ * ring already carries the percentage, so the copy only has to say what the
+ * percentage is *of*.
+ */
+function dayHeadline(summary: DaySummary): string {
+  if (summary.openTasks === 0) {
+    return summary.completedToday > 0 ? 'Today is done' : 'Nothing due today';
+  }
+  return `${summary.openTasks} left today`;
+}
+
+/** A quiet tally of the numbers that are not zero — no grid of stat labels. */
+function dayTally(summary: DaySummary): string | null {
+  const parts = [
+    summary.overdue > 0 ? `${summary.overdue} overdue` : null,
+    summary.completedToday > 0 ? `${summary.completedToday} done` : null,
+    summary.focusMinutes > 0 ? `${summary.focusMinutes}m focus` : null,
+  ].filter((part): part is string => part !== null);
+  return parts.length > 0 ? parts.join(' · ') : null;
+}
 
 /** A slice of the day, ordered the way the list below is ordered. */
 interface TaskSection {
@@ -250,59 +268,26 @@ export function TaskDashboard() {
         contentContainerStyle={{ paddingBottom: 150, gap: theme.spacing.md }}
       >
         {/*
-          Greeting — date and greeting share one line at a smaller size than
-          before. Together with the compact switcher this is what puts the first
-          task above the fold on a 5-inch phone.
-        */}
-        <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: theme.spacing.sm }}>
-          <Text variant="title">{greeting()}</Text>
-          <Text variant="caption" color={theme.colors.textSecondary} numberOfLines={1}>
-            {new Date().toLocaleDateString(undefined, {
-              weekday: 'long',
-              day: 'numeric',
-              month: 'long',
-            })}
-          </Text>
-        </View>
+          Day at a glance: one ring, one sentence, one tally line.
 
-        {/* Day at a glance — four numbers and one bar, no card chrome. */}
-        <View style={{ gap: theme.spacing.md }}>
-          <View style={{ flexDirection: 'row' }}>
-            <StatColumn
-              icon="today-outline"
-              value={`${summary.openTasks}`}
-              label="DUE TODAY"
-            />
-            <StatColumn
-              icon="alert-circle-outline"
-              value={`${summary.overdue}`}
-              label="OVERDUE"
-              tint={summary.overdue > 0 ? theme.colors.danger : undefined}
-            />
-            <StatColumn icon="timer-outline" value={`${summary.focusMinutes}m`} label="FOCUS" />
-            <StatColumn
-              icon="checkmark-done-outline"
-              value={`${summary.completedToday}`}
-              label="DONE"
-              tint={summary.completedToday > 0 ? theme.colors.success : undefined}
-            />
-          </View>
-          <View
-            style={{
-              height: 4,
-              borderRadius: 2,
-              backgroundColor: theme.colors.surfaceSunken,
-              overflow: 'hidden',
-            }}
-          >
-            <View
-              style={{
-                width: `${Math.round(summary.completionRatio * 100)}%`,
-                height: '100%',
-                borderRadius: 2,
-                backgroundColor: theme.colors.accent,
-              }}
-            />
+          This row replaces a four-column stat grid, a progress bar and a row of
+          uppercase labels. The ring already states the percentage, so the copy
+          underneath only names the numbers that are not zero — an empty day
+          says nothing extra, which is what makes it read as calm.
+        */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.lg }}>
+          <ProgressRing progress={summary.completionRatio} size={60} strokeWidth={6}>
+            <Text variant="caption" color={theme.colors.textSecondary}>
+              {`${Math.round(summary.completionRatio * 100)}%`}
+            </Text>
+          </ProgressRing>
+          <View style={{ flex: 1, gap: 2 }}>
+            <Text variant="heading">{dayHeadline(summary)}</Text>
+            {dayTally(summary) ? (
+              <Text variant="caption" color={theme.colors.textSecondary} numberOfLines={1}>
+                {dayTally(summary)}
+              </Text>
+            ) : null}
           </View>
         </View>
 
@@ -320,7 +305,7 @@ export function TaskDashboard() {
             // often the one you created a moment ago.
             setLastTaskText(text.trim() || null);
           }}
-          hint="Type naturally — dates, times, #tags, !priority and ~estimates are read automatically."
+          hint="Dates, #tags, !priority and ~estimates are read as you type."
         />
 
         {/* Repeat last + saved templates. Long-press a template to forget it. */}
@@ -448,23 +433,23 @@ export function TaskDashboard() {
               <Text variant="bodyStrong" numberOfLines={1}>
                 {activeProject.name}
               </Text>
-              <Text variant="micro" color={theme.colors.textTertiary}>
-                {activeProject.openTasks} OPEN · {activeProject.totalTasks} TOTAL
+              <Text variant="caption" color={theme.colors.textTertiary}>
+                {activeProject.openTasks} open
               </Text>
             </View>
             <MiniAction
               icon="open-outline"
-              label="Open"
+              label="Open list"
               onPress={() => router.push(`/project/${activeProject.id}`)}
             />
             <MiniAction
               icon="create-outline"
-              label="Rename"
+              label="Rename list"
               onPress={() => setProjectSheet({ open: true, editing: activeProject.id })}
             />
             <MiniAction
               icon="trash-outline"
-              label={confirmDeleteId === activeProject.id ? 'Sure?' : 'Delete'}
+              label={confirmDeleteId === activeProject.id ? 'Confirm delete list' : 'Delete list'}
               tint={theme.colors.danger}
               onPress={() => void handleDeleteProject(activeProject.id)}
             />
@@ -504,11 +489,7 @@ export function TaskDashboard() {
             <EmptyState
               icon="checkmark-done-outline"
               title={search ? 'No matches' : 'All clear'}
-              subtitle={
-                search
-                  ? 'Try a different search term.'
-                  : 'Nothing needs you right now. Add something above — or tap an example and watch the parser build the task:'
-              }
+              subtitle={search ? 'Try a different search term.' : 'Nothing needs you today.'}
             >
               {search ? null : (
                 <View style={{ gap: theme.spacing.sm, marginTop: theme.spacing.sm, width: '100%' }}>
@@ -528,10 +509,8 @@ export function TaskDashboard() {
                         minHeight: 48,
                         paddingVertical: theme.spacing.sm,
                         paddingHorizontal: theme.spacing.md,
-                        borderRadius: theme.radii.lg,
+                        borderRadius: theme.radii.pill,
                         backgroundColor: theme.colors.surface,
-                        borderWidth: StyleSheet.hairlineWidth,
-                        borderColor: theme.colors.border,
                       }}
                     >
                       <Ionicons name={example.icon} size={15} color={theme.colors.accent} />
@@ -548,40 +527,11 @@ export function TaskDashboard() {
             <View style={{ gap: theme.spacing.xl }}>
               {sections.map((section) => (
                 <View key={section.key} style={{ gap: theme.spacing.sm }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
-                    <View
-                      style={{
-                        width: 6,
-                        height: 6,
-                        borderRadius: 3,
-                        backgroundColor: section.attention
-                          ? theme.colors.danger
-                          : theme.colors.accent,
-                      }}
-                    />
-                    <Text
-                      variant="micro"
-                      color={
-                        section.attention ? theme.colors.danger : theme.colors.textSecondary
-                      }
-                    >
-                      {section.label.toUpperCase()}
-                    </Text>
-                    <View
-                      style={{
-                        minWidth: 18,
-                        paddingHorizontal: 6,
-                        paddingVertical: 1,
-                        borderRadius: theme.radii.pill,
-                        backgroundColor: theme.colors.surfaceSunken,
-                        alignItems: 'center',
-                      }}
-                    >
-                      <Text variant="micro" color={theme.colors.textTertiary}>
-                        {section.tasks.length}
-                      </Text>
-                    </View>
-                  </View>
+                  <SectionLabel
+                    label={section.label}
+                    count={section.tasks.length}
+                    tint={section.attention ? theme.colors.danger : undefined}
+                  />
                   {section.tasks.map((task) => (
                     <TaskCard
                       key={task.id}
@@ -595,11 +545,6 @@ export function TaskDashboard() {
                   ))}
                 </View>
               ))}
-
-              {/* Gestures are invisible unless they are named somewhere. */}
-              <Text variant="caption" color={theme.colors.textSecondary} align="center">
-                Swipe right to complete · swipe left to delete · hold for an AI breakdown
-              </Text>
             </View>
           )
         ) : null}
@@ -617,7 +562,7 @@ export function TaskDashboard() {
         ) : null}
       </ScrollView>
 
-      {/* Expandable quick-add FAB */}
+      {/* Expandable quick-add FAB — two actions, each a real destination. */}
       {fabOpen ? (
         <View style={{ position: 'absolute', right: 20, bottom: 96, alignItems: 'flex-end', gap: theme.spacing.sm }}>
           <FabAction
@@ -634,14 +579,6 @@ export function TaskDashboard() {
             onPress={() => {
               setFabOpen(false);
               router.push('/focus');
-            }}
-          />
-          <FabAction
-            icon="sparkles-outline"
-            label="Break down a task"
-            onPress={() => {
-              setFabOpen(false);
-              flash('Long-press any task to break it down with AI', 2800);
             }}
           />
         </View>
@@ -695,36 +632,10 @@ export function TaskDashboard() {
 }
 
 /**
- * One number + a micro label, with an icon so each figure is self-describing.
- * Four of these replace the old gradient hero.
+ * A 40dp icon button for the active-list toolbar. It used to spell its label
+ * out in caps next to the icon; three chips of uppercase text under a list name
+ * was more chrome than the list itself. The icon stays named for TalkBack.
  */
-function StatColumn({
-  icon,
-  value,
-  label,
-  tint,
-}: {
-  icon: keyof typeof Ionicons.glyphMap;
-  value: string;
-  label: string;
-  tint?: string;
-}) {
-  const theme = useTheme();
-  return (
-    <View style={{ flex: 1, gap: 4 }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-        <Ionicons name={icon} size={12} color={tint ?? theme.colors.textTertiary} />
-        <Text variant="micro" color={tint ?? theme.colors.textTertiary} numberOfLines={1}>
-          {label}
-        </Text>
-      </View>
-      <Text variant="title" color={tint ?? theme.colors.textPrimary}>
-        {value}
-      </Text>
-    </View>
-  );
-}
-
 function MiniAction({
   icon,
   label,
@@ -737,27 +648,21 @@ function MiniAction({
   tint?: string;
 }) {
   const theme = useTheme();
-  const color = tint ?? theme.colors.accent;
   return (
     <Pressable
       onPress={onPress}
-      hitSlop={6}
+      hitSlop={10}
       accessibilityRole="button"
       accessibilityLabel={label}
       style={{
-        flexDirection: 'row',
+        width: 40,
+        height: 40,
         alignItems: 'center',
-        gap: 4,
-        paddingVertical: 6,
-        paddingHorizontal: 9,
+        justifyContent: 'center',
         borderRadius: theme.radii.pill,
-        backgroundColor: theme.colors.surfaceSunken,
       }}
     >
-      <Ionicons name={icon} size={12} color={color} />
-      <Text variant="micro" color={color}>
-        {label.toUpperCase()}
-      </Text>
+      <Ionicons name={icon} size={17} color={tint ?? theme.colors.textSecondary} />
     </Pressable>
   );
 }
@@ -782,12 +687,12 @@ function FilterPill({
         flexDirection: 'row',
         alignItems: 'center',
         gap: 6,
-        paddingVertical: 7,
-        paddingHorizontal: 13,
+        paddingVertical: 8,
+        paddingHorizontal: 14,
         borderRadius: theme.radii.pill,
-        backgroundColor: active ? theme.colors.accent : theme.colors.surface,
-        borderWidth: 1,
-        borderColor: active ? theme.colors.accent : theme.colors.border,
+        // Unselected list chips are a flat tint rather than an outlined pill,
+        // so a row of six lists reads as a set of choices instead of a form.
+        backgroundColor: active ? theme.colors.accent : theme.colors.surfaceSunken,
       }}
     >
       {icon ? <Ionicons name={icon} size={12} color={theme.colors.accent} /> : null}
@@ -833,15 +738,10 @@ function FabAction({
         gap: theme.spacing.sm,
         backgroundColor: theme.colors.surfaceElevated,
         borderRadius: theme.radii.pill,
-        borderWidth: 1,
-        borderColor: theme.colors.border,
         paddingVertical: 10,
         paddingHorizontal: theme.spacing.lg,
+        ...elevation.floating,
         shadowColor: theme.colors.shadow,
-        shadowOpacity: 0.22,
-        shadowRadius: 12,
-        shadowOffset: { width: 0, height: 6 },
-        elevation: 3,
       }}
     >
       <Ionicons name={icon} size={15} color={theme.colors.accent} />

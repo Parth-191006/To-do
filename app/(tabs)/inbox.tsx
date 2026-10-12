@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BottomSheet } from '@/components/BottomSheet';
@@ -185,11 +185,17 @@ export default function InboxScreen() {
         subtitle={t('inbox.subtitle')}
         right={
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm }}>
-            <Text variant="caption" color={theme.colors.textSecondary}>
-              {selecting
-                ? t('inbox.selectedCount', { count: selected.size })
-                : t('inbox.shownCount', { count: filtered.length })}
-            </Text>
+            {/*
+              The count only appears while selecting, where it is the one piece
+              of state that matters. In normal use the list *is* the count, and
+              a permanent "12 shown" next to a 12-row list was a third number
+              competing with the filter pills for attention.
+            */}
+            {selecting ? (
+              <Text variant="caption" color={theme.colors.textSecondary}>
+                {t('inbox.selectedCount', { count: selected.size })}
+              </Text>
+            ) : null}
             {/* Multiselect entry point: a real control, not a hidden gesture. */}
             <Pressable
               onPress={() => (selecting ? clearSelection() : toggleSelected(filtered[0]?.id ?? ''))}
@@ -200,11 +206,10 @@ export default function InboxScreen() {
                 selecting ? t('inbox.cancelSelection') : t('inbox.selectMultiple')
               }
               style={{
-                flexDirection: 'row',
+                width: 40,
+                height: 40,
                 alignItems: 'center',
-                gap: 5,
-                minHeight: 40,
-                paddingHorizontal: 12,
+                justifyContent: 'center',
                 borderRadius: theme.radii.pill,
                 backgroundColor: selecting ? theme.colors.accent : theme.colors.surfaceSunken,
                 opacity: filtered.length === 0 ? 0.5 : 1,
@@ -212,15 +217,9 @@ export default function InboxScreen() {
             >
               <Ionicons
                 name={selecting ? 'close' : 'checkbox-outline'}
-                size={14}
+                size={17}
                 color={selecting ? theme.colors.accentContrast : theme.colors.textSecondary}
               />
-              <Text
-                variant="caption"
-                color={selecting ? theme.colors.accentContrast : theme.colors.textSecondary}
-              >
-                {selecting ? t('common.cancel') : t('inbox.select')}
-              </Text>
             </Pressable>
           </View>
         }
@@ -270,12 +269,12 @@ export default function InboxScreen() {
               accessibilityRole="button"
               accessibilityState={{ selected: filter === entry.key }}
               style={{
-                paddingVertical: 7,
+                paddingVertical: 8,
                 paddingHorizontal: 14,
                 borderRadius: theme.radii.pill,
-                backgroundColor: filter === entry.key ? theme.colors.accent : theme.colors.surface,
-                borderWidth: StyleSheet.hairlineWidth,
-                borderColor: filter === entry.key ? theme.colors.accent : theme.colors.border,
+                // Flat tint, no outline — same treatment as the list pills on
+                // Today, so a chip means the same thing on every screen.
+                backgroundColor: filter === entry.key ? theme.colors.accent : theme.colors.surfaceSunken,
               }}
             >
               <Text
@@ -305,12 +304,14 @@ export default function InboxScreen() {
                     flexDirection: 'row',
                     alignItems: 'center',
                     gap: 6,
-                    paddingVertical: 5,
-                    paddingHorizontal: 11,
+                    paddingVertical: 6,
+                    paddingHorizontal: 12,
                     borderRadius: theme.radii.pill,
-                    borderWidth: StyleSheet.hairlineWidth,
-                    borderColor: activeTagId === tag.id ? tag.color : theme.colors.border,
-                    backgroundColor: theme.colors.surface,
+                    // The tag's own colour is the selection cue, so the pill
+                    // itself stays flat and gets a tinted ring only when active.
+                    borderWidth: activeTagId === tag.id ? 1 : 0,
+                    borderColor: tag.color,
+                    backgroundColor: theme.colors.surfaceSunken,
                   }}
                 >
                   <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: tag.color }} />
