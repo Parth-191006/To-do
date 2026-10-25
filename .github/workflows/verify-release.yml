@@ -60,7 +60,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           # Tags, because the expected version comes from `app.json` at the
           # released tag — `main` may already be ahead of it.
